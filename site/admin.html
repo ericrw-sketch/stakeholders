@@ -67,7 +67,7 @@
         <thead>
           <tr>
             <th>Date</th><th>Immeuble</th><th>Proposé par</th><th>Contact</th><th>Chemin</th>
-            <th>Lien</th><th>Quand / remarques</th><th>Suivi</th><th>Notes équipe</th>
+            <th>Lien</th><th>Quand / remarques</th><th>Suivi</th><th>Notes équipe</th><th></th>
           </tr>
         </thead>
         <tbody id="rows"></tbody>
@@ -77,7 +77,7 @@
     <div class="toolbar"><h2>Lieux proposés par les ambassadeurs</h2></div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Date</th><th>Lieu</th><th>Proposé par</th><th>Pourquoi</th><th>Contact sur place</th><th>Suivi</th><th>Notes équipe</th></tr></thead>
+        <thead><tr><th>Date</th><th>Lieu</th><th>Proposé par</th><th>Pourquoi</th><th>Contact sur place</th><th>Suivi</th><th>Notes équipe</th><th></th></tr></thead>
         <tbody id="suggestions"></tbody>
       </table>
     </div>
@@ -143,7 +143,8 @@
             ${FOLLOW_UP.map((o) => `<option${o === c.follow_up ? ' selected' : ''}>${esc(o)}</option>`).join('')}
           </select></td>
           <td><textarea rows="2" data-id="${esc(c.id)}" data-field="team_notes">${esc(c.team_notes)}</textarea></td>
-        </tr>`).join('') || '<tr><td colspan="9" class="muted">Aucun contact pour l’instant.</td></tr>';
+          <td><button class="link danger" data-delete="amb_contributions" data-id="${esc(c.id)}" title="Supprimer ce contact">Supprimer</button></td>
+        </tr>`).join('') || '<tr><td colspan="10" class="muted">Aucun contact pour l’instant.</td></tr>';
 
       document.querySelectorAll('#rows [data-field]').forEach((el) => el.addEventListener('change', async () => {
         const { error } = await sb.from('amb_contributions').update({ [el.dataset.field]: el.value }).eq('id', el.dataset.id);
@@ -234,12 +235,26 @@
             ${SUGG_FOLLOW_UP.map((o) => `<option${o === s.follow_up ? ' selected' : ''}>${esc(o)}</option>`).join('')}
           </select></td>
           <td><textarea rows="2" data-sugg="${esc(s.id)}" data-sfield="team_notes">${esc(s.team_notes)}</textarea></td>
-        </tr>`).join('') || '<tr><td colspan="7" class="muted">Aucun lieu proposé pour l’instant.</td></tr>';
+          <td><button class="link danger" data-delete="amb_suggestions" data-id="${esc(s.id)}" title="Supprimer ce lieu">Supprimer</button></td>
+        </tr>`).join('') || '<tr><td colspan="8" class="muted">Aucun lieu proposé pour l’instant.</td></tr>';
       document.querySelectorAll('[data-sfield]').forEach((el) => el.addEventListener('change', async () => {
         const { error } = await sb.from('amb_suggestions').update({ [el.dataset.sfield]: el.value }).eq('id', el.dataset.sugg);
         document.getElementById('error').textContent = error ? 'Modification non enregistrée.' : '';
       }));
     }
+
+    // Suppression définitive (tests, doublons, erreurs). Réservée à l'équipe par les règles de la base.
+    const DELETE_LABELS = { amb_contributions: 'ce contact', amb_suggestions: 'ce lieu' };
+    document.addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-delete]');
+      if (!btn) return;
+      const table = btn.dataset.delete;
+      if (!confirm(`Supprimer définitivement ${DELETE_LABELS[table]} ? Cette action est irréversible.`)) return;
+      const { error, count } = await sb.from(table).delete({ count: 'exact' }).eq('id', btn.dataset.id);
+      document.getElementById('error').textContent = error || !count ? 'Suppression impossible.' : '';
+      if (error) console.error(error);
+      await (table === 'amb_contributions' ? loadContributions() : loadSuggestions());
+    });
 
     async function start() {
       const who = await currentMember();
