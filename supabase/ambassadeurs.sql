@@ -138,31 +138,66 @@ language sql stable security definer set search_path = public as $$
   group by lead_id
 $$;
 
+-- Invitations : un email + un rôle, avant même que la personne ait un compte.
+-- Quand elle se connecte pour la première fois (lien reçu par email), elle devient membre automatiquement.
+create table if not exists public.amb_invites (
+  email      text primary key check (email = lower(trim(email))),
+  role       text not null check (role in ('shareholder', 'ambassador', 'admin')),
+  name       text not null,
+  created_at timestamptz not null default now()
+);
+alter table public.amb_invites enable row level security;
+revoke all on public.amb_invites from anon, authenticated;
+
+create or replace function public.amb_accept_invite()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare inv public.amb_invites;
+begin
+  select * into inv from public.amb_invites where email = lower(new.email);
+  if found then
+    insert into public.amb_members (user_id, role, name) values (new.id, inv.role, inv.name)
+    on conflict (user_id) do update set role = excluded.role, name = excluded.name;
+    delete from public.amb_invites where email = inv.email;
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists amb_accept_invite on auth.users;
+create trigger amb_accept_invite after insert on auth.users
+  for each row execute function public.amb_accept_invite();
+
 -- Ajouter (ou modifier) un membre à partir de son email. Réservé à l'équipe.
--- La personne doit d'abord avoir un compte (Authentication → Users → Invite user).
+-- Si la personne a déjà un compte, elle est membre tout de suite ; sinon elle est invitée.
 create or replace function public.amb_upsert_member(p_email text, p_role text, p_name text)
 returns void language plpgsql security definer set search_path = public as $$
-declare uid uuid;
+declare uid uuid; e text := lower(trim(p_email));
 begin
   if public.amb_role() is distinct from 'admin' then
     raise exception 'Réservé à l’équipe';
   end if;
-  select id into uid from auth.users where lower(email) = lower(trim(p_email));
+  select id into uid from auth.users where lower(email) = e;
   if uid is null then
-    raise exception 'Aucun compte pour %. Invitez d’abord la personne dans Supabase (Authentication → Users).', p_email;
+    insert into public.amb_invites (email, role, name) values (e, p_role, p_name)
+    on conflict (email) do update set role = excluded.role, name = excluded.name;
+  else
+    insert into public.amb_members (user_id, role, name) values (uid, p_role, p_name)
+    on conflict (user_id) do update set role = excluded.role, name = excluded.name;
   end if;
-  insert into public.amb_members (user_id, role, name) values (uid, p_role, p_name)
-  on conflict (user_id) do update set role = excluded.role, name = excluded.name;
 end $$;
 
--- Liste des membres avec leur email. Réservé à l'équipe.
+-- Liste des membres et des invitations en attente. Réservé à l'équipe.
+drop function if exists public.amb_list_members();
 create or replace function public.amb_list_members()
-returns table (email text, role text, name text)
+returns table (email text, role text, name text, pending boolean)
 language sql stable security definer set search_path = public as $$
-  select u.email::text, m.role, m.name
-  from public.amb_members m join auth.users u on u.id = m.user_id
+  select * from (
+    select u.email::text, m.role, m.name, false
+    from public.amb_members m join auth.users u on u.id = m.user_id
+    union all
+    select i.email, i.role, i.name, true from public.amb_invites i
+  ) t
   where public.amb_role() = 'admin'
-  order by m.role, m.name
+  order by 4 desc, 2, 3
 $$;
 
 revoke execute on function public.amb_upsert_member(text, text, text) from anon, public;
@@ -171,3 +206,7 @@ revoke execute on function public.amb_lead_counts() from anon, public;
 grant execute on function public.amb_upsert_member(text, text, text) to authenticated;
 grant execute on function public.amb_list_members() to authenticated;
 grant execute on function public.amb_lead_counts() to authenticated;
+revoke execute on function public.amb_accept_invite() from anon, authenticated, public;
+revoke execute on function public.amb_set_author() from anon, authenticated, public;
+revoke execute on function public.amb_role() from anon, public;
+grant execute on function public.amb_role() to authenticated;

@@ -65,7 +65,7 @@
     </div>
 
     <div class="toolbar"><h2>Qui a accès</h2></div>
-    <p class="muted small">La personne doit d’abord avoir un compte : Supabase → Authentication → Users → « Invite user ». Ajoutez-la ensuite ici avec son rôle.</p>
+    <p class="muted small">Ajoutez l’email et le rôle, puis envoyez à la personne l’adresse de cette plateforme : elle clique sur « Recevoir un lien de connexion » avec cet email, et elle a accès.</p>
     <form class="member-form" id="member-form">
       <label>Email <input name="email" type="email" required></label>
       <label>Nom affiché <input name="name" required></label>
@@ -81,7 +81,7 @@
     <p class="error" id="member-error"></p>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Nom</th><th>Email</th><th>Rôle</th></tr></thead>
+        <thead><tr><th>Nom</th><th>Email</th><th>Rôle</th><th>Statut</th></tr></thead>
         <tbody id="members"></tbody>
       </table>
     </div>
@@ -139,7 +139,7 @@
       const { data, error } = await sb.rpc('amb_list_members');
       if (error) throw error;
       document.getElementById('members').innerHTML = data.map((m) =>
-        `<tr><td>${esc(m.name)}</td><td>${esc(m.email)}</td><td>${esc(ROLES[m.role])}</td></tr>`).join('');
+        `<tr><td>${esc(m.name)}</td><td>${esc(m.email)}</td><td>${esc(ROLES[m.role])}</td><td>${m.pending ? 'Invité, pas encore connecté' : 'Actif'}</td></tr>`).join('');
     }
 
     document.getElementById('member-form').addEventListener('submit', async (e) => {

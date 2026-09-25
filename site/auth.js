@@ -37,9 +37,10 @@ function wireLoginForm(onSignedIn) {
     if (!email) { err.textContent = 'Entrez d’abord votre email.'; return; }
     const { error } = await sb.auth.signInWithOtp({
       email,
-      options: { shouldCreateUser: false, emailRedirectTo: location.href.split('#')[0] },
+      // Crée le compte à la première connexion ; seul un email invité par l'équipe obtient l'accès.
+      options: { shouldCreateUser: true, emailRedirectTo: location.href.split('#')[0] },
     });
-    if (error) { err.textContent = 'Impossible d’envoyer le lien. Votre email est-il bien celui de votre compte ?'; return; }
+    if (error) { err.textContent = 'Impossible d’envoyer le lien pour le moment. Réessayez dans quelques minutes.'; return; }
     info.hidden = false;
     info.textContent = `Lien envoyé à ${email}. Ouvrez-le depuis cet appareil.`;
   });
