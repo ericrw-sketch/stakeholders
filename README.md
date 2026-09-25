@@ -23,7 +23,9 @@ Reste à faire à la main :
 
 ## Carte Google Maps
 
-Sans clé, la carte utilise OpenStreetMap. Pour passer à Google Maps :
+**En place** : `GOOGLE_MAPS_API_KEY` est défini dans Netlify avec la clé navigateur « Maps Platform API Key » du projet Google Cloud `raysun-zonings` (jamais la « Clé serveur »). Son onglet *Référents HTTP* doit contenir `https://citywatt-ambassadeurs.netlify.app/*`, sinon Google la refuse et le site reste sur OpenStreetMap.
+
+Sans clé, la carte utilise OpenStreetMap. Pour configurer Google Maps :
 
 1. Google Cloud Console → APIs & Services : activer **Maps JavaScript API** et **Geocoding API** (recherche d'adresse du bouton « + »).
 2. Credentials : une clé API **restreinte** — *Application restrictions* : Websites, `https://citywatt-ambassadeurs.netlify.app/*` ; *API restrictions* : les deux API ci-dessus.
