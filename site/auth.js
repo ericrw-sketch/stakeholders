@@ -21,6 +21,15 @@ function wireLoginForm(onSignedIn) {
   const err = document.getElementById('login-error');
   const info = document.getElementById('login-info');
 
+  // Retour d'un lien de connexion refusé (déjà utilisé, expiré, ou ouvert par l'antivirus de la messagerie).
+  const hash = new URLSearchParams(location.hash.slice(1));
+  if (hash.get('error_code')) {
+    err.textContent = hash.get('error_code') === 'otp_expired'
+      ? 'Ce lien de connexion a expiré ou a déjà été utilisé. Demandez-en un nouveau ci-dessous.'
+      : 'La connexion a échoué. Demandez un nouveau lien ci-dessous.';
+    history.replaceState(null, '', location.pathname);
+  }
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     err.textContent = '';
@@ -40,7 +49,13 @@ function wireLoginForm(onSignedIn) {
       // Crée le compte à la première connexion ; seul un email invité par l'équipe obtient l'accès.
       options: { shouldCreateUser: true, emailRedirectTo: location.href.split('#')[0] },
     });
-    if (error) { err.textContent = 'Impossible d’envoyer le lien pour le moment. Réessayez dans quelques minutes.'; return; }
+    if (error) {
+      console.error(error);
+      err.textContent = error.status === 429
+        ? 'Trop de demandes rapprochées. Patientez une minute avant de redemander un lien.'
+        : 'Impossible d’envoyer le lien pour le moment (service d’email indisponible). Réessayez plus tard ou écrivez à eric.rw@raysun.solar.';
+      return;
+    }
     info.hidden = false;
     info.textContent = `Lien envoyé à ${email}. Ouvrez-le depuis cet appareil.`;
   });
