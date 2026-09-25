@@ -1,0 +1,19 @@
+{
+  "_comment": "Coordonnées approximatives (lat, lng) par nom d'immeuble, à vérifier et corriger si besoin. La clé doit correspondre exactement à la colonne « Immeuble / site » de l'Excel.",
+  "Tour & Taxis — Gare Maritime / Hôtel des Douanes": [50.8662, 4.3478],
+  "Herman Teirlinck — siège de l'administration flamande": [50.8690, 4.3500],
+  "Site InBev Anderlecht": [50.8252, 4.3040],
+  "City Center": [50.8545, 4.3590],
+  "Hôpital Delta — CHIREC": [50.8195, 4.4040],
+  "Plateforme Four à Briques": [50.8700, 4.4150],
+  "Site Putman Frères": [50.8215, 4.2965],
+  "Ancien site Cora Anderlecht (retail park)": [50.8195, 4.2740],
+  "Usine d'embouteillage Coca-Cola": [50.8145, 4.2625],
+  "Station d'épuration Bruxelles-Nord": [50.8970, 4.3840],
+  "Cliniques universitaires Saint-Luc": [50.8535, 4.4520],
+  "Siège européen Toyota Motor Europe": [50.8800, 4.4200],
+  "Docks Bruxsel": [50.8780, 4.3700],
+  "Site Solvay Neder-over-Heembeek": [50.8995, 4.3905],
+  "Plateforme et siège Delhaize — Osseghem": [50.8585, 4.3230],
+  "Portefeuille de parkings bruxellois": [50.8505, 4.3530]
+}

@@ -1,0 +1,27 @@
+{
+  "name": "citywatt-ambassadeurs",
+  "version": "1.0.0",
+  "description": "Carte des leads CityWatt pour actionnaires et ambassadeurs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "import": "node scripts/import-excel.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ericrw-sketch/stakeholders.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ericrw-sketch/stakeholders/issues"
+  },
+  "homepage": "https://github.com/ericrw-sketch/stakeholders#readme",
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "express": "^5.2.1",
+    "leaflet": "^1.9.4"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  }
+}

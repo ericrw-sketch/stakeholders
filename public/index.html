@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CityWatt — Ambassadeurs</title>
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Connexion -->
+  <div id="login" class="overlay" hidden>
+    <form id="login-form" class="card">
+      <h1>CityWatt <span>Ambassadeurs</span></h1>
+      <p class="muted">Aidez-nous à ouvrir les portes des grands immeubles bruxellois. Une introduction suffit : nous prenons le relais.</p>
+      <label>Votre nom <input name="name" required autocomplete="name"></label>
+      <label>Votre email <input name="email" type="email" autocomplete="email"></label>
+      <label>Code d’accès <input name="code" type="password" required></label>
+      <p class="error" id="login-error"></p>
+      <button type="submit" class="btn primary">Entrer</button>
+    </form>
+  </div>
+
+  <header class="topbar">
+    <div class="brand">CityWatt <span>Ambassadeurs</span></div>
+    <div class="user">
+      <span id="user-name"></span>
+      <a id="admin-link" href="admin.html" hidden>Suivi équipe</a>
+      <button id="logout" class="link">Se déconnecter</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar">
+      <div class="intro">
+        <p>Cliquez sur un immeuble sur la carte ou dans la liste. Si le nom, l’adresse ou une société vous parle, dites-le nous.</p>
+        <input id="search" type="search" placeholder="Rechercher un immeuble, une société, une commune…">
+        <div class="filters">
+          <label><input type="checkbox" data-wave="1" checked> Vague 1</label>
+          <label><input type="checkbox" data-wave="2" checked> Vague 2</label>
+          <span class="legend"><i class="dot prio-A"></i>A <i class="dot prio-B"></i>B <i class="dot prio-C"></i>C</span>
+        </div>
+      </div>
+      <ul id="lead-list" class="lead-list"></ul>
+    </aside>
+
+    <div id="map"></div>
+
+    <section id="panel" class="panel" hidden>
+      <button class="close" id="panel-close" aria-label="Fermer">×</button>
+      <div id="panel-body"></div>
+    </section>
+  </main>
+
+  <template id="form-template">
+    <form class="contrib-form">
+      <h3>Comment pouvez-vous nous aider ?</h3>
+      <div class="paths">
+        <label class="path">
+          <input type="radio" name="mode" value="intro" required>
+          <strong>Je fais l’introduction</strong>
+          <span>Vous nous mettez en relation (email, message, café). Nous préparons un petit texte si besoin.</span>
+        </label>
+        <label class="path">
+          <input type="radio" name="mode" value="contact">
+          <strong>Je vous donne le contact</strong>
+          <span>Vous nous transmettez ses coordonnées et nous l’approchons nous-mêmes.</span>
+        </label>
+      </div>
+      <div class="fields" hidden>
+        <label>Nom de votre contact * <input name="contactName" required></label>
+        <div class="row">
+          <label>Sa fonction <input name="contactFunction"></label>
+          <label>Sa société <input name="contactCompany"></label>
+        </div>
+        <div class="row contact-only">
+          <label>Email <input name="contactEmail" type="email"></label>
+          <label>Téléphone <input name="contactPhone" type="tel"></label>
+        </div>
+        <label>Comment le connaissez-vous ? <input name="relation" placeholder="Ancien collègue, ami, client, conseil d’administration…"></label>
+        <div class="row">
+          <label>Qualité du lien
+            <select name="strength">
+              <option value="">—</option><option>Fort</option><option>Moyen</option><option>Faible</option>
+            </select>
+          </label>
+          <label class="intro-only">Quand ? <input name="when" placeholder="Cette semaine, en octobre…"></label>
+        </div>
+        <label class="checkbox contact-only"><input type="checkbox" name="mentionName" checked> Vous pouvez dire que vous venez de ma part</label>
+        <label>Remarques <textarea name="remarks" rows="3"></textarea></label>
+        <p class="error"></p>
+        <button type="submit" class="btn primary">Envoyer</button>
+      </div>
+    </form>
+  </template>
+
+  <script src="vendor/leaflet/leaflet.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
