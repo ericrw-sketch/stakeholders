@@ -1,7 +1,8 @@
-# Site 100 % statique : pas d'étape de build, Netlify publie le dossier site/.
+# Site statique : la seule étape de build écrit site/config.js à partir des variables
+# d'environnement Netlify (clé Google Maps notamment). Netlify publie ensuite le dossier site/.
 [build]
   publish = "site"
-  command = ""
+  command = "node scripts/write-config.js"
 
 [[headers]]
   for = "/*"

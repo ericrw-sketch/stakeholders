@@ -34,18 +34,26 @@
   <main class="layout">
     <aside class="sidebar">
       <div class="intro">
-        <p>Cliquez sur un immeuble sur la carte ou dans la liste. Si le nom, l’adresse ou une société vous parle, dites-le nous.</p>
+        <p>Cliquez sur un immeuble sur la carte ou dans la liste. Si le nom, l’adresse ou une société vous parle, dites-le nous. Vous connaissez un autre lieu à prospecter ? Utilisez le bouton « + ».</p>
         <input id="search" type="search" placeholder="Rechercher un immeuble, une société, une commune…">
         <div class="filters">
           <label><input type="checkbox" data-wave="1" checked> Vague 1</label>
           <label><input type="checkbox" data-wave="2" checked> Vague 2</label>
           <span class="legend"><i class="dot prio-A"></i>A <i class="dot prio-B"></i>B <i class="dot prio-C"></i>C</span>
         </div>
+        <div class="filters">
+          <label><input type="checkbox" id="show-members" checked> <i class="dot member"></i><span>Membres CityWatt (<span id="members-count">0</span>)</span></label>
+          <label><input type="checkbox" id="show-suggestions" checked> <i class="dot sugg"></i><span>Lieux proposés</span></label>
+        </div>
       </div>
       <ul id="lead-list" class="lead-list"></ul>
     </aside>
 
-    <div id="map"></div>
+    <div class="map-wrap">
+      <div id="map"></div>
+      <button id="add-place" class="fab" title="Proposer un lieu à prospecter">+ Proposer un lieu</button>
+      <div class="placing-hint">Cliquez sur la carte à l’endroit du lieu, ou tapez son adresse dans le formulaire.</div>
+    </div>
 
     <section id="panel" class="panel" hidden>
       <button class="close" id="panel-close" aria-label="Fermer">×</button>
@@ -95,10 +103,46 @@
     </form>
   </template>
 
+  <template id="sugg-template">
+    <form class="contrib-form sugg-form">
+      <h3>Proposer un lieu à prospecter</h3>
+      <p class="muted small">Un bâtiment avec une belle toiture, un gros consommateur, un endroit où vous connaissez quelqu’un : dites-nous où aller.</p>
+      <label>Nom du lieu * <input name="placeName" required placeholder="Ex. Basilique de Koekelberg"></label>
+      <label>Adresse <input name="address" placeholder="Rue, numéro, commune"></label>
+      <button type="button" class="btn secondary locate">Localiser sur la carte</button>
+      <p class="where muted small">Ou cliquez directement sur la carte.</p>
+      <label>Pourquoi ce lieu ? <textarea name="reason" rows="3" placeholder="Grande toiture, consommation importante, projet en cours…"></textarea></label>
+      <div class="paths">
+        <label class="path">
+          <input type="radio" name="hasContact" value="yes" required>
+          <strong>J’ai un contact</strong>
+          <span>Je connais quelqu’un sur place.</span>
+        </label>
+        <label class="path">
+          <input type="radio" name="hasContact" value="no">
+          <strong>Pas de contact</strong>
+          <span>Je vous signale juste le lieu.</span>
+        </label>
+      </div>
+      <div class="contact-fields" hidden>
+        <label>Nom du contact * <input name="contactName"></label>
+        <label>Sa fonction <input name="contactFunction"></label>
+        <div class="row">
+          <label>Email <input name="contactEmail" type="email"></label>
+          <label>Téléphone <input name="contactPhone" type="tel"></label>
+        </div>
+        <label>Comment le connaissez-vous ? <input name="relation"></label>
+      </div>
+      <p class="error"></p>
+      <button type="submit" class="btn primary">Envoyer le lieu</button>
+    </form>
+  </template>
+
   <script src="vendor/leaflet/leaflet.js"></script>
   <script src="vendor/supabase.js"></script>
   <script src="config.js"></script>
   <script src="auth.js"></script>
+  <script src="map.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
