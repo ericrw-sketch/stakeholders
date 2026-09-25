@@ -34,11 +34,19 @@ function loadGoogleScript(key) {
 
 async function createGoogleMap(el, { key, mapId }) {
   await loadGoogleScript(key);
-  const { Map } = await google.maps.importLibrary('maps');
+  const { Map, MapTypeControlStyle } = await google.maps.importLibrary('maps');
   const { AdvancedMarkerElement } = await google.maps.importLibrary('marker');
+  const { ControlPosition } = await google.maps.importLibrary('core');
   const map = new Map(el, {
     center: BRUSSELS, zoom: 12, mapId: mapId || 'DEMO_MAP_ID',
-    mapTypeControl: false, streetViewControl: false, fullscreenControl: false, clickableIcons: false,
+    // Bouton « Plan / Satellite » (satellite avec noms de rues : utile pour repérer les toitures).
+    mapTypeControl: true,
+    mapTypeControlOptions: {
+      mapTypeIds: ['roadmap', 'hybrid'],
+      style: MapTypeControlStyle.HORIZONTAL_BAR,
+      position: ControlPosition.TOP_LEFT,
+    },
+    streetViewControl: false, fullscreenControl: false, clickableIcons: false,
   });
   let clickHandler = null;
   map.addListener('click', (e) => clickHandler && clickHandler(e.latLng.lat(), e.latLng.lng()));
@@ -80,10 +88,16 @@ async function createGoogleMap(el, { key, mapId }) {
 function createLeafletMap(el) {
   const map = L.map(el, { zoomControl: true }).setView([BRUSSELS.lat, BRUSSELS.lng], 12);
   // Fond de carte OpenStreetMap : gratuit, sans clé (usage modéré, attribution obligatoire).
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  const plan = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     maxZoom: 19,
   }).addTo(map);
+  // Vue satellite de secours (Esri World Imagery, gratuite, attribution obligatoire).
+  const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    attribution: 'Imagerie &copy; Esri, Maxar, Earthstar Geographics',
+    maxZoom: 19,
+  });
+  L.control.layers({ Plan: plan, Satellite: satellite }, null, { position: 'topleft', collapsed: false }).addTo(map);
   let clickHandler = null;
   map.on('click', (e) => clickHandler && clickHandler(e.latlng.lat, e.latlng.lng));
 
