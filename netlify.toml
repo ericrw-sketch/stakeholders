@@ -1,0 +1,12 @@
+# Site 100 % statique : pas d'étape de build, Netlify publie le dossier site/.
+[build]
+  publish = "site"
+  command = ""
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    # frame-ancestors : autorise l'affichage dans un onglet (iframe) de votre app. Ajoutez son domaine ici.
+    Content-Security-Policy = "frame-ancestors 'self' https://*.netlify.app"

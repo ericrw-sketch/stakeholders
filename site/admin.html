@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CityWatt — Suivi des contacts</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    body { display: block; }
+    .wrap { padding: 16px; max-width: 1400px; margin: 0 auto; }
+    .toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 20px 0 12px; }
+    .toolbar h2 { margin: 0; font-size: 18px; flex: 1; }
+    .toolbar .btn.primary { width: auto; }
+    .table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
+    table { border-collapse: collapse; width: 100%; font-size: 14px; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { background: var(--bg); font-weight: 600; white-space: nowrap; }
+    td small { color: var(--muted); display: block; }
+    td select, td textarea { min-width: 150px; }
+    .stats { display: flex; gap: 10px; flex-wrap: wrap; }
+    .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; }
+    .stat b { display: block; font-size: 22px; }
+    .member-form { display: grid; grid-template-columns: 2fr 2fr 1fr auto; gap: 8px; align-items: end; margin-bottom: 10px; }
+    .member-form label { font-size: 13px; }
+    .member-form .btn { width: auto; }
+    @media (max-width: 760px) { .member-form { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div id="login" class="overlay" hidden>
+    <form id="login-form" class="card">
+      <h1>CityWatt <span>Suivi équipe</span></h1>
+      <label>Votre email <input name="email" type="email" required autocomplete="email"></label>
+      <label>Mot de passe <input name="password" type="password" autocomplete="current-password"></label>
+      <p class="error" id="login-error"></p>
+      <p class="success" id="login-info" hidden></p>
+      <button type="submit" class="btn primary">Se connecter</button>
+      <button type="button" id="magic-link" class="link" style="margin-top:12px">Recevoir un lien de connexion par email</button>
+    </form>
+  </div>
+
+  <header class="topbar">
+    <div class="brand">CityWatt <span>Suivi équipe</span></div>
+    <div class="user"><a href="./">← Carte</a><button class="link" onclick="signOut()">Se déconnecter</button></div>
+  </header>
+
+  <div class="wrap" id="content" hidden>
+    <div class="stats" id="stats"></div>
+
+    <div class="toolbar">
+      <h2>Contacts proposés</h2>
+      <button class="btn primary" id="export">Exporter pour Excel (CSV)</button>
+    </div>
+    <p class="error" id="error"></p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th><th>Immeuble</th><th>Proposé par</th><th>Contact</th><th>Chemin</th>
+            <th>Lien</th><th>Quand / remarques</th><th>Suivi</th><th>Notes équipe</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+
+    <div class="toolbar"><h2>Qui a accès</h2></div>
+    <p class="muted small">La personne doit d’abord avoir un compte : Supabase → Authentication → Users → « Invite user ». Ajoutez-la ensuite ici avec son rôle.</p>
+    <form class="member-form" id="member-form">
+      <label>Email <input name="email" type="email" required></label>
+      <label>Nom affiché <input name="name" required></label>
+      <label>Rôle
+        <select name="role">
+          <option value="shareholder">Actionnaire</option>
+          <option value="ambassador">Ambassadeur</option>
+          <option value="admin">Équipe</option>
+        </select>
+      </label>
+      <button class="btn primary" type="submit">Ajouter</button>
+    </form>
+    <p class="error" id="member-error"></p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Nom</th><th>Email</th><th>Rôle</th></tr></thead>
+        <tbody id="members"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="vendor/supabase.js"></script>
+  <script src="config.js"></script>
+  <script src="auth.js"></script>
+  <script>
+    const FOLLOW_UP = ['Nouveau', 'En cours', 'Rendez-vous obtenu', 'Sans suite'];
+    const ROLES = { shareholder: 'Actionnaire', ambassador: 'Ambassadeur', admin: 'Équipe' };
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    let rows = [];
+
+    async function loadContributions() {
+      const { data, error } = await sb.from('amb_contributions')
+        .select('*, amb_leads(name)').order('created_at', { ascending: false });
+      if (error) throw error;
+      rows = data;
+
+      const people = new Set(rows.map((c) => c.author_id));
+      document.getElementById('stats').innerHTML = [
+        [rows.length, 'contacts proposés'],
+        [new Set(rows.map((c) => c.lead_id)).size, 'immeubles couverts'],
+        [people.size, 'ambassadeurs actifs'],
+        [rows.filter((c) => c.follow_up === 'Rendez-vous obtenu').length, 'rendez-vous obtenus'],
+      ].map(([n, l]) => `<div class="stat"><b>${n}</b>${l}</div>`).join('');
+
+      document.getElementById('rows').innerHTML = rows.map((c) => `
+        <tr>
+          <td>${esc(c.created_at.slice(0, 10))}</td>
+          <td><a href="./#${esc(c.lead_id)}">${esc(c.amb_leads?.name)}</a></td>
+          <td>${esc(c.author_name)}</td>
+          <td><strong>${esc(c.contact_name)}</strong>
+            <small>${esc([c.contact_function, c.contact_company].filter(Boolean).join(' · '))}</small>
+            <small>${esc([c.contact_email, c.contact_phone].filter(Boolean).join(' · '))}</small></td>
+          <td>${c.mode === 'intro' ? 'Introduction' : 'Contact transmis'}${c.mode === 'contact' ? `<small>${c.mention_name ? 'Peut être cité' : 'Ne pas citer'}</small>` : ''}</td>
+          <td>${esc(c.strength)}<small>${esc(c.relation)}</small></td>
+          <td>${esc(c.when_text)}<small>${esc(c.remarks)}</small></td>
+          <td><select data-id="${esc(c.id)}" data-field="follow_up">
+            ${FOLLOW_UP.map((o) => `<option${o === c.follow_up ? ' selected' : ''}>${esc(o)}</option>`).join('')}
+          </select></td>
+          <td><textarea rows="2" data-id="${esc(c.id)}" data-field="team_notes">${esc(c.team_notes)}</textarea></td>
+        </tr>`).join('') || '<tr><td colspan="9" class="muted">Aucun contact pour l’instant.</td></tr>';
+
+      document.querySelectorAll('[data-field]').forEach((el) => el.addEventListener('change', async () => {
+        const { error } = await sb.from('amb_contributions').update({ [el.dataset.field]: el.value }).eq('id', el.dataset.id);
+        document.getElementById('error').textContent = error ? 'Modification non enregistrée.' : '';
+        const row = rows.find((r) => r.id === el.dataset.id);
+        if (!error && row) row[el.dataset.field] = el.value;
+      }));
+    }
+
+    async function loadMembers() {
+      const { data, error } = await sb.rpc('amb_list_members');
+      if (error) throw error;
+      document.getElementById('members').innerHTML = data.map((m) =>
+        `<tr><td>${esc(m.name)}</td><td>${esc(m.email)}</td><td>${esc(ROLES[m.role])}</td></tr>`).join('');
+    }
+
+    document.getElementById('member-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const f = Object.fromEntries(new FormData(e.target).entries());
+      const { error } = await sb.rpc('amb_upsert_member', { p_email: f.email, p_role: f.role, p_name: f.name });
+      document.getElementById('member-error').textContent = error ? error.message : '';
+      if (!error) { e.target.reset(); loadMembers(); }
+    });
+
+    // CSV au format de l'onglet « Vos contacts » ; « ; » et BOM pour qu'Excel (réglages belges) l'ouvre correctement.
+    document.getElementById('export').addEventListener('click', () => {
+      const header = ['Date', 'Actionnaire / ambassadeur', 'Immeuble / société concernée', 'Votre contact (nom)', 'Sa fonction',
+        'Société du contact', 'Email du contact', 'Téléphone du contact', 'Comment vous le connaissez', 'Qualité du lien',
+        'Ce que vous acceptez de faire', 'Peut-on citer votre nom ?', 'Quand', 'Remarques', 'Suivi', 'Notes équipe'];
+      const lines = rows.map((c) => [c.created_at.slice(0, 10), c.author_name, c.amb_leads?.name, c.contact_name,
+        c.contact_function, c.contact_company, c.contact_email, c.contact_phone, c.relation, c.strength,
+        c.mode === 'intro' ? 'Je fais l’introduction' : 'Je vous donne le contact', c.mention_name ? 'Oui' : 'Non',
+        c.when_text, c.remarks, c.follow_up, c.team_notes]);
+      const csv = [header, ...lines]
+        .map((l) => l.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(';')).join('\r\n');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
+      a.download = `CityWatt_contacts_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+    });
+
+    async function start() {
+      const who = await currentMember();
+      if (!who) { document.getElementById('login').hidden = false; return; }
+      if (who.member?.role !== 'admin') { location.href = './'; return; }
+      document.getElementById('login').hidden = true;
+      document.getElementById('content').hidden = false;
+      await Promise.all([loadContributions(), loadMembers()]);
+    }
+
+    wireLoginForm(start);
+    start().catch((e) => { console.error(e); document.getElementById('error').textContent = 'Erreur de chargement.'; });
+  </script>
+</body>
+</html>

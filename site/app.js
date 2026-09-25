@@ -8,16 +8,6 @@ function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-async function api(url, options = {}) {
-  const res = await fetch(url, {
-    ...options,
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw Object.assign(new Error(data.error || 'Erreur'), { status: res.status });
-  return data;
-}
-
 function shortName(lead) {
   return lead.name.split(' — ')[0].replace(/\s*\(.*\)$/, '');
 }
@@ -99,7 +89,7 @@ function applyFilters() {
   for (const lead of visible) {
     const li = document.createElement('li');
     li.className = lead.id === state.selectedId ? 'active' : '';
-    const mine = state.mine.some((c) => c.leadId === lead.id);
+    const mine = state.mine.some((c) => c.lead_id === lead.id);
     li.innerHTML = `
       <i class="dot prio-${esc(lead.priority)}"></i>
       <div>
@@ -139,7 +129,7 @@ function row(label, value) {
 }
 
 function renderPanel(lead) {
-  const mine = state.mine.filter((c) => c.leadId === lead.id);
+  const mine = state.mine.filter((c) => c.lead_id === lead.id);
   $('#panel-body').innerHTML = `
     <div class="panel-head">
       <span class="tag prio-${esc(lead.priority)}">Prio ${esc(lead.priority)}</span>
@@ -160,7 +150,7 @@ function renderPanel(lead) {
     ${lead.status ? `<div class="status"><strong>Où nous en sommes</strong><p>${esc(lead.status)}</p></div>` : ''}
     ${lead.contributionCount ? `<p class="muted small">${lead.contributionCount} contact(s) déjà proposé(s) pour cet immeuble.</p>` : ''}
     ${mine.length ? `<div class="mine-list"><strong>Vos propositions</strong><ul>${mine.map((c) =>
-      `<li>${esc(c.contactName)} — ${c.mode === 'intro' ? 'introduction' : 'contact transmis'}</li>`).join('')}</ul></div>` : ''}
+      `<li>${esc(c.contact_name)} — ${c.mode === 'intro' ? 'introduction' : 'contact transmis'}</li>`).join('')}</ul></div>` : ''}
     <div id="form-slot"></div>`;
   mountForm(lead);
   $('#panel').hidden = false;
@@ -180,25 +170,41 @@ function mountForm(lead) {
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(form);
-    const body = Object.fromEntries(fd.entries());
-    body.leadId = lead.id;
-    body.mentionName = fd.has('mentionName');
+    const v = Object.fromEntries(fd.entries());
     const err = $('.error', form);
     err.textContent = '';
-    try {
-      const saved = await api('/api/contributions', { method: 'POST', body: JSON.stringify(body) });
-      state.mine.push(saved);
-      lead.contributionCount = (lead.contributionCount || 0) + 1;
-      renderPanel(lead);
-      applyFilters();
-      $('#form-slot').insertAdjacentHTML('afterbegin',
-        `<div class="success">Merci ! ${body.mode === 'intro'
-          ? 'Nous revenons vers vous pour préparer l’introduction.'
-          : 'Nous prenons contact et vous tenons au courant.'} Vous pouvez ajouter un autre contact ci-dessous.</div>`);
-    } catch (ex) {
-      if (ex.status === 401) return showLogin();
-      err.textContent = ex.message;
+    const row = {
+      lead_id: lead.id,
+      mode: v.mode,
+      contact_name: v.contactName.trim(),
+      contact_function: v.contactFunction || null,
+      contact_company: v.contactCompany || null,
+      contact_email: v.mode === 'contact' ? v.contactEmail || null : null,
+      contact_phone: v.mode === 'contact' ? v.contactPhone || null : null,
+      relation: v.relation || null,
+      strength: v.strength || null,
+      mention_name: v.mode === 'contact' ? fd.has('mentionName') : true,
+      when_text: v.mode === 'intro' ? v.when || null : null,
+      remarks: v.remarks || null,
+    };
+    if (v.mode === 'contact' && !row.contact_email && !row.contact_phone) {
+      err.textContent = 'Indiquez au moins un email ou un téléphone pour ce contact.';
+      return;
     }
+    const { data: saved, error } = await sb.from('amb_contributions').insert(row).select().single();
+    if (error) {
+      err.textContent = 'L’envoi a échoué. Réessayez, ou écrivez-nous directement.';
+      console.error(error);
+      return;
+    }
+    state.mine.push(saved);
+    lead.contributionCount = (lead.contributionCount || 0) + 1;
+    renderPanel(lead);
+    applyFilters();
+    $('#form-slot').insertAdjacentHTML('afterbegin',
+      `<div class="success">Merci ! ${v.mode === 'intro'
+        ? 'Nous revenons vers vous pour préparer l’introduction.'
+        : 'Nous prenons contact et vous tenons au courant.'} Vous pouvez ajouter un autre contact ci-dessous.</div>`);
   });
   $('#form-slot').appendChild(form);
 }
@@ -213,42 +219,57 @@ $('#panel-close').addEventListener('click', () => {
 
 // --- Session -----------------------------------------------------------------
 
-function showLogin() {
-  $('#login').hidden = false;
+async function loadData() {
+  const [leads, status, counts, mine] = await Promise.all([
+    sb.from('amb_leads').select('*'),
+    sb.from('amb_lead_status').select('*'), // vide pour les ambassadeurs (règle RLS)
+    sb.rpc('amb_lead_counts'),
+    sb.from('amb_contributions').select('*').eq('author_id', state.user.id),
+  ]);
+  for (const r of [leads, status, counts, mine]) if (r.error) throw r.error;
+  const statusById = new Map(status.data.map((s) => [s.lead_id, s.status]));
+  const countById = new Map(counts.data.map((c) => [c.lead_id, Number(c.n)]));
+  state.leads = leads.data.map((l) => ({
+    id: l.id, wave: l.wave, priority: l.priority, name: l.name, address: l.address,
+    municipality: l.municipality, solarKwp: l.solar_kwp, productionMwh: l.production_mwh,
+    companies: l.companies, consumptionMwh: l.consumption_mwh, role: l.target_role, owner: l.owner,
+    pitch: l.pitch, targetFunction: l.target_function, lat: l.lat, lng: l.lng,
+    status: statusById.get(l.id) || null,
+    contributionCount: countById.get(l.id) || 0,
+  }));
+  state.mine = mine.data;
 }
 
-$('#login-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const body = Object.fromEntries(new FormData(e.target).entries());
-  try {
-    state.user = await api('/api/login', { method: 'POST', body: JSON.stringify(body) });
-    $('#login').hidden = true;
-    await start();
-  } catch (ex) {
-    $('#login-error').textContent = ex.message;
-  }
-});
-
-$('#logout').addEventListener('click', async () => {
-  await api('/api/logout', { method: 'POST' });
-  location.reload();
-});
+function showMessage(html) {
+  $('#login').hidden = false;
+  $('#login-form').innerHTML = `<h1>CityWatt <span>Ambassadeurs</span></h1>${html}
+    <button type="button" class="btn primary" onclick="signOut()">Se déconnecter</button>`;
+}
 
 async function start() {
+  const who = await currentMember();
+  if (!who) { $('#login').hidden = false; return; }
+  if (!who.member) {
+    return showMessage(`<p>Votre compte (${esc(who.user.email)}) n’a pas encore accès à l’espace ambassadeurs.</p>
+      <p class="muted">Écrivez à Eric Rwamucyo — eric.rw@raysun.solar — pour être ajouté.</p>`);
+  }
+  state.user = { id: who.user.id, ...who.member };
+  $('#login').hidden = true;
   $('#user-name').textContent = state.user.name;
   $('#admin-link').hidden = state.user.role !== 'admin';
-  [state.leads, state.mine] = await Promise.all([api('/api/leads'), api('/api/contributions/mine')]);
+  await loadData();
   renderMarkers();
   updateLabels();
   const hash = decodeURIComponent(location.hash.slice(1));
   if (hash && state.leads.some((l) => l.id === hash)) select(hash);
 }
 
-(async () => {
-  try {
-    state.user = await api('/api/me');
-    await start();
-  } catch {
-    showLogin();
-  }
-})();
+$('#logout').addEventListener('click', signOut);
+wireLoginForm(() => start().catch(showError));
+
+function showError(e) {
+  console.error(e);
+  showMessage('<p class="error">Impossible de charger les données. Réessayez dans un instant.</p>');
+}
+
+start().catch(showError);

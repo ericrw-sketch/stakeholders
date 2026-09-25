@@ -1,4 +1,2 @@
 node_modules/
-data/contributions.json
-data/*.tmp
 .env

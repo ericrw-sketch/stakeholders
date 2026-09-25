@@ -13,11 +13,12 @@
     <form id="login-form" class="card">
       <h1>CityWatt <span>Ambassadeurs</span></h1>
       <p class="muted">Aidez-nous à ouvrir les portes des grands immeubles bruxellois. Une introduction suffit : nous prenons le relais.</p>
-      <label>Votre nom <input name="name" required autocomplete="name"></label>
-      <label>Votre email <input name="email" type="email" autocomplete="email"></label>
-      <label>Code d’accès <input name="code" type="password" required></label>
+      <label>Votre email <input name="email" type="email" required autocomplete="email"></label>
+      <label>Mot de passe <input name="password" type="password" autocomplete="current-password"></label>
       <p class="error" id="login-error"></p>
-      <button type="submit" class="btn primary">Entrer</button>
+      <p class="success" id="login-info" hidden></p>
+      <button type="submit" class="btn primary">Se connecter</button>
+      <button type="button" id="magic-link" class="link" style="margin-top:12px">Pas de mot de passe ? Recevoir un lien de connexion par email</button>
     </form>
   </div>
 
@@ -95,6 +96,9 @@
   </template>
 
   <script src="vendor/leaflet/leaflet.js"></script>
+  <script src="vendor/supabase.js"></script>
+  <script src="config.js"></script>
+  <script src="auth.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
