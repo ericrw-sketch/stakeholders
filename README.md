@@ -31,6 +31,25 @@ Sans clé, la carte utilise OpenStreetMap. Pour passer à Google Maps :
 
 `scripts/write-config.js` écrit la clé dans `site/config.js` au déploiement : elle n'est jamais dans le dépôt. Si Google refuse la clé, le site repasse tout seul sur OpenStreetMap.
 
+## Notifications par email (via Odoo)
+
+À chaque contact proposé, lieu proposé ou demande d'accès (sauf ce que l'équipe saisit elle-même), la base appelle la fonction Supabase `amb-notify` (`supabase/functions/amb-notify`), qui envoie un email via Odoo (`mail.mail` sur https://raysun.odoo.com).
+
+Secrets à définir dans Supabase → Edge Functions → Secrets :
+
+| Secret | Valeur |
+|---|---|
+| `ODOO_USERNAME` | login Odoo de l'expéditeur (ex. eric.rw@raysun.solar) |
+| `ODOO_API_KEY` | clé API de cet utilisateur : Odoo → Mon profil → Sécurité du compte → Nouvelle clé API |
+| `ODOO_DB` *(optionnel)* | nom de la base, `raysun` par défaut |
+| `NOTIFY_EMAIL` *(optionnel)* | destinataire(s), `eric.rw@raysun.solar` par défaut |
+
+Si l'envoi échoue, la ligne reste marquée comme non notifiée (`notified_at` vide) ; les erreurs sont visibles dans Supabase → Edge Functions → amb-notify → Logs.
+
+## Points convertis
+
+Sur la fiche d'un immeuble ou d'un lieu proposé, l'équipe voit un bouton « Converti : retirer de la carte ». Le point disparaît pour les actionnaires et ambassadeurs ; l'équipe peut le réafficher (case « Afficher les points convertis ») et le remettre sur la carte.
+
 ## Qui peut entrer
 
 - **Sur invitation** : sur `admin.html`, « Qui a accès » → email, nom, rôle. La personne se connecte par lien email et a accès directement (table `amb_invites`).
@@ -73,6 +92,8 @@ site/                     Ce que Netlify publie
 supabase/
   ambassadeurs.sql        Tables, règles d'accès, fonctions
   002_demandes_suggestions_membres.sql   Demandes d'accès, lieux proposés, membres
+  003_convertis_notifications.sql        Points convertis, déclencheurs de notification
+  functions/amb-notify/   Envoi des notifications via Odoo
   immeubles.sql           Données des immeubles (généré)
 scripts/import-excel.js   Excel → data/leads.json + supabase/immeubles.sql
 scripts/write-config.js   Variables Netlify → site/config.js (étape de build)

@@ -81,6 +81,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); ou
 }
 .pin.selected { width: 34px; height: 34px; left: -17px; top: -17px; box-shadow: 0 0 0 4px rgba(11,122,92,.35), 0 1px 4px rgba(0,0,0,.4); }
 .pin.sugg { background: var(--sugg); font-size: 16px; }
+.pin.converted { opacity: .45; filter: grayscale(.6); }
 .mk-label {
   top: -10px; white-space: nowrap; cursor: pointer;
   background: rgba(255,255,255,.92); box-shadow: 0 1px 3px rgba(0,0,0,.25); border-radius: 4px;
@@ -130,6 +131,8 @@ dl { margin: 12px 0; }
 .kv dd { margin: 0; overflow-wrap: anywhere; }
 .status { border-left: 3px solid var(--prio-B); padding: 4px 12px; margin: 12px 0; }
 .status p { margin: 4px 0 0; font-size: 14px; }
+.admin-actions { border: 1px dashed var(--border); border-radius: 8px; padding: 10px 12px; margin: 12px 0; }
+.admin-actions .btn { margin-top: 6px; }
 .mine-list ul { margin: 4px 0 0; padding-left: 18px; }
 .success { background: var(--accent-soft); color: var(--accent); padding: 10px 12px; border-radius: 8px; margin: 12px 0; }
 

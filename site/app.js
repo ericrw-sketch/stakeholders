@@ -23,12 +23,12 @@ function fmt(n) {
 // --- Marqueurs ------------------------------------------------------------------
 
 function leadHtml(lead, selected) {
-  return `<div class="pin prio-${esc(lead.priority)}${selected ? ' selected' : ''}">${lead.wave === 1 ? '1' : '2'}</div>`
+  return `<div class="pin prio-${esc(lead.priority)}${selected ? ' selected' : ''}${lead.convertedAt ? ' converted' : ''}">${lead.wave === 1 ? '1' : '2'}</div>`
     + `<span class="mk-label ${labelSide(lead)}">${esc(shortName(lead))}</span>`;
 }
 
 function suggHtml(s, selected) {
-  return `<div class="pin sugg${selected ? ' selected' : ''}">+</div><span class="mk-label right">${esc(s.place_name)}</span>`;
+  return `<div class="pin sugg${selected ? ' selected' : ''}${s.follow_up === 'Converti' ? ' converted' : ''}">+</div><span class="mk-label right">${esc(s.place_name)}</span>`;
 }
 
 // Quand deux immeubles sont très proches, l'étiquette du plus à l'ouest passe à gauche.
@@ -75,8 +75,12 @@ function updateLabels() {
 
 // --- Liste et filtres --------------------------------------------------------
 
+// Points convertis : retirés de la carte. Seule l'équipe peut les réafficher.
+const showConverted = () => state.user.role === 'admin' && $('#show-converted').checked;
+
 function matches(lead, q, waves) {
   if (!waves.has(lead.wave)) return false;
+  if (lead.convertedAt && !showConverted()) return false;
   if (!q) return true;
   const hay = [lead.name, lead.address, lead.municipality, lead.companies, lead.owner].join(' ').toLowerCase();
   return hay.includes(q);
@@ -97,7 +101,9 @@ function applyFilters() {
     if (m) (visible.includes(lead) ? m.show() : m.hide());
   }
   state.memberMarkers.forEach((m) => (showMembers ? m.show() : m.hide()));
-  const visibleSugg = state.suggestions.filter((s) => showSugg && (!q || s.place_name.toLowerCase().includes(q)));
+  const visibleSugg = state.suggestions.filter((s) => showSugg
+    && (s.follow_up !== 'Converti' || showConverted())
+    && (!q || s.place_name.toLowerCase().includes(q)));
   state.suggestions.forEach((s) => {
     const m = state.suggMarkers.get(s.id);
     if (m) (visibleSugg.includes(s) ? m.show() : m.hide());
@@ -113,7 +119,7 @@ function applyFilters() {
       <i class="dot prio-${esc(lead.priority)}"></i>
       <div>
         <strong>${esc(shortName(lead))}</strong>
-        <small>${esc(lead.municipality)} · Vague ${lead.wave} · Prio ${esc(lead.priority)}</small>
+        <small>${lead.convertedAt ? 'Converti · ' : ''}${esc(lead.municipality)} · Vague ${lead.wave} · Prio ${esc(lead.priority)}</small>
       </div>
       ${mine ? '<span class="badge mine" title="Vous avez déjà proposé un contact">✓</span>'
         : lead.contributionCount ? `<span class="badge" title="Contacts déjà proposés">${lead.contributionCount}</span>` : ''}`;
@@ -181,7 +187,16 @@ function selectSuggestion(id) {
       ${s.has_contact ? row('Lien', s.relation) : ''}
     </dl>
     ${s.team_notes && state.user.role === 'admin' ? `<div class="status"><strong>Notes équipe</strong><p>${esc(s.team_notes)}</p></div>` : ''}
-    <p class="muted small">L’équipe CityWatt suit ce lieu. Le statut évolue au fil de la prospection.</p>`;
+    <p class="muted small">L’équipe CityWatt suit ce lieu. Le statut évolue au fil de la prospection.</p>
+    ${adminConvertBlock(s.follow_up === 'Converti', 'Converti : retirer de la carte', 'Remettre sur la carte', 'convert-sugg')}`;
+  $('#convert-sugg')?.addEventListener('click', async () => {
+    const convert = s.follow_up !== 'Converti';
+    const followUp = convert ? 'Converti' : 'Retenu';
+    const { error } = await sb.from('amb_suggestions').update({ follow_up: followUp }).eq('id', s.id);
+    if (error) { console.error(error); alert('Modification non enregistrée.'); return; }
+    s.follow_up = followUp;
+    afterConvert(() => selectSuggestion(s.id), convert);
+  });
   openPanel();
   applyFilters();
 }
@@ -189,6 +204,24 @@ function selectSuggestion(id) {
 function row(label, value) {
   if (value == null || value === '') return '';
   return `<div class="kv"><dt>${esc(label)}</dt><dd>${typeof value === 'number' ? fmt(value) : esc(value)}</dd></div>`;
+}
+
+function adminConvertBlock(isConverted, convertLabel, restoreLabel, id) {
+  if (state.user.role !== 'admin') return '';
+  return `<div class="admin-actions"><strong>Équipe</strong>
+    ${isConverted ? '<p class="muted small">Converti : masqué sur la carte des actionnaires et ambassadeurs.</p>' : ''}
+    <button type="button" class="btn secondary" id="${id}">${isConverted ? restoreLabel : convertLabel}</button></div>`;
+}
+
+// Après conversion, le point disparaît : on ferme la fiche (sauf si l'équipe affiche les convertis).
+function afterConvert(reopen, converted) {
+  if (converted && !showConverted()) {
+    $('#panel').hidden = true;
+    clearSelection();
+    applyFilters();
+  } else {
+    reopen();
+  }
 }
 
 function openPanel() {
@@ -219,7 +252,17 @@ function renderPanel(lead) {
     ${lead.contributionCount ? `<p class="muted small">${lead.contributionCount} contact(s) déjà proposé(s) pour cet immeuble.</p>` : ''}
     ${mine.length ? `<div class="mine-list"><strong>Vos propositions</strong><ul>${mine.map((c) =>
       `<li>${esc(c.contact_name)} — ${c.mode === 'intro' ? 'introduction' : 'contact transmis'}</li>`).join('')}</ul></div>` : ''}
+    ${adminConvertBlock(lead.convertedAt,
+      'Converti : retirer de la carte', 'Remettre sur la carte', 'convert-lead')}
     <div id="form-slot"></div>`;
+  $('#convert-lead')?.addEventListener('click', async () => {
+    const convert = !lead.convertedAt;
+    if (convert && !confirm('Marquer cet immeuble comme converti ? Il disparaît de la carte pour les actionnaires et ambassadeurs.')) return;
+    const { error } = await sb.rpc('amb_set_lead_converted', { p_id: lead.id, p_converted: convert });
+    if (error) { console.error(error); alert('Modification non enregistrée.'); return; }
+    lead.convertedAt = convert ? new Date().toISOString() : null;
+    afterConvert(() => select(lead.id), convert);
+  });
   mountForm(lead);
   openPanel();
 }
@@ -391,7 +434,7 @@ async function loadData() {
     id: l.id, wave: l.wave, priority: l.priority, name: l.name, address: l.address,
     municipality: l.municipality, solarKwp: l.solar_kwp, productionMwh: l.production_mwh,
     companies: l.companies, consumptionMwh: l.consumption_mwh, role: l.target_role, owner: l.owner,
-    pitch: l.pitch, targetFunction: l.target_function, lat: l.lat, lng: l.lng,
+    pitch: l.pitch, targetFunction: l.target_function, lat: l.lat, lng: l.lng, convertedAt: l.converted_at,
     status: statusById.get(l.id) || null,
     contributionCount: countById.get(l.id) || 0,
   }));
@@ -457,6 +500,7 @@ async function start() {
   $('#login').hidden = true;
   $('#user-name').textContent = state.user.name;
   $('#admin-link').hidden = state.user.role !== 'admin';
+  $('#converted-filter').hidden = state.user.role !== 'admin';
   const [map] = await Promise.all([createMap($('#map')), loadData()]);
   state.map = map;
   map.onZoom(updateLabels);

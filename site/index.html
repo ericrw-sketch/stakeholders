@@ -44,6 +44,7 @@
         <div class="filters">
           <label><input type="checkbox" id="show-members" checked> <i class="dot member"></i><span>Membres CityWatt (<span id="members-count">0</span>)</span></label>
           <label><input type="checkbox" id="show-suggestions" checked> <i class="dot sugg"></i><span>Lieux proposés</span></label>
+          <label id="converted-filter" hidden><input type="checkbox" id="show-converted"> <span>Afficher les points convertis</span></label>
         </div>
       </div>
       <ul id="lead-list" class="lead-list"></ul>
@@ -93,7 +94,15 @@
               <option value="">—</option><option>Fort</option><option>Moyen</option><option>Faible</option>
             </select>
           </label>
-          <label class="intro-only">Quand ? <input name="when" placeholder="Cette semaine, en octobre…"></label>
+          <label class="intro-only">Quand ?
+            <select name="when">
+              <option value="">—</option>
+              <option>Tout de suite</option>
+              <option>Demain</option>
+              <option>Dans une semaine</option>
+              <option>Indéterminé</option>
+            </select>
+          </label>
         </div>
         <label class="checkbox contact-only"><input type="checkbox" name="mentionName" checked> Vous pouvez dire que vous venez de ma part</label>
         <label>Remarques <textarea name="remarks" rows="3"></textarea></label>

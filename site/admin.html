@@ -216,7 +216,7 @@
       }));
     }
 
-    const SUGG_FOLLOW_UP = ['Nouveau', 'À étudier', 'Retenu', 'Écarté'];
+    const SUGG_FOLLOW_UP = ['Nouveau', 'À étudier', 'Retenu', 'Converti', 'Écarté'];
     async function loadSuggestions() {
       const { data, error } = await sb.from('amb_suggestions').select('*').order('created_at', { ascending: false });
       if (error) throw error;
