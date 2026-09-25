@@ -101,12 +101,13 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); ou
 /* Bouton « + » et consigne de placement */
 .map-wrap { position: relative; min-height: 0; }
 .map-wrap #map { position: absolute; inset: 0; }
+.fabs { position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 900; display: flex; gap: 10px; }
 .fab {
-  position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 900;
   background: var(--sugg); color: #fff; border: 0; border-radius: 24px; padding: 12px 20px;
   font: 600 15px system-ui, sans-serif; box-shadow: 0 3px 10px rgba(0,0,0,.25); cursor: pointer;
 }
-.placing .fab { display: none; }
+.placing .fabs { display: none; }
+.fab-team { background: var(--accent); }
 .placing-hint {
   display: none; position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 900;
   background: var(--text); color: #fff; padding: 8px 14px; border-radius: 8px; font-size: 14px; max-width: 90%;
@@ -133,7 +134,7 @@ dl { margin: 12px 0; }
 .status { border-left: 3px solid var(--prio-B); padding: 4px 12px; margin: 12px 0; }
 .status p { margin: 4px 0 0; font-size: 14px; }
 .admin-actions { border: 1px dashed var(--border); border-radius: 8px; padding: 10px 12px; margin: 12px 0; }
-.admin-actions .btn { margin-top: 6px; }
+.admin-buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
 .mine-list ul { margin: 4px 0 0; padding-left: 18px; }
 .success { background: var(--accent-soft); color: var(--accent); padding: 10px 12px; border-radius: 8px; margin: 12px 0; }
 
@@ -169,7 +170,8 @@ dl { margin: 12px 0; }
 /* Mobile : la liste passe sous la carte, la fiche en plein écran */
 @media (max-width: 760px) {
   .layout { grid-template-columns: 1fr; grid-template-rows: 55vh 1fr; }
-  .fab { bottom: 12px; padding: 10px 16px; }
+  .fabs { bottom: 12px; }
+  .fab { padding: 10px 14px; font-size: 14px; }
   .sidebar { order: 2; border-right: 0; border-top: 1px solid var(--border); }
   .intro p { display: none; }
   .panel { position: fixed; top: 0; width: 100%; }

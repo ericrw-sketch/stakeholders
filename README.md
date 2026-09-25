@@ -65,7 +65,16 @@ Sur la fiche d'un immeuble ou d'un lieu proposé, l'équipe voit un bouton « Co
 
 Ces règles sont appliquées par la base de données (RLS), pas seulement par l'écran : même quelqu'un qui bricole le navigateur ne peut pas les contourner. Un compte de votre app qui n'est pas dans `amb_members` ne voit rien.
 
-## Mettre à jour les immeubles
+## Gérer les immeubles (équipe)
+
+Sur la carte, l'équipe a :
+- un bouton **« + Immeuble »** : nom, vague, priorité, adresse (bouton « Localiser » ou clic sur la carte), angle d'entrée, sociétés, propriétaire, kWc, MWh, « Où nous en sommes » ;
+- sur chaque fiche : **« Modifier l'immeuble »** (et, dans le formulaire, « Supprimer cet immeuble ») ;
+- sur un lieu proposé : **« Transformer en immeuble »**, qui pré-remplit le formulaire et passe le lieu en « Converti ».
+
+C'est désormais la façon normale de faire évoluer la liste. L'import Excel ci-dessous reste possible pour un chargement en masse, mais il écrase les immeubles de même identifiant.
+
+## Import Excel (chargement en masse)
 
 1. Modifiez l'Excel (onglet « Immeubles », mêmes en-têtes) et remplacez `data/leads.xlsx`.
 2. Nouvel immeuble ? Ajoutez ses coordonnées dans `data/coordinates.json` (clic droit sur Google Maps pour les obtenir).
@@ -95,6 +104,8 @@ supabase/
   ambassadeurs.sql        Tables, règles d'accès, fonctions
   002_demandes_suggestions_membres.sql   Demandes d'accès, lieux proposés, membres
   003_convertis_notifications.sql        Points convertis, déclencheurs de notification
+  004_suppression.sql                    Suppression par l'équipe (contacts, lieux, demandes)
+  005_gestion_immeubles.sql              Ajout / modification des immeubles par l'équipe
   functions/amb-notify/   Envoi des notifications via Odoo
   immeubles.sql           Données des immeubles (généré)
 scripts/import-excel.js   Excel → data/leads.json + supabase/immeubles.sql

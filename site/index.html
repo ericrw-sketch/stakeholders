@@ -52,7 +52,10 @@
 
     <div class="map-wrap">
       <div id="map"></div>
-      <button id="add-place" class="fab" title="Proposer un lieu à prospecter">+ Proposer un lieu</button>
+      <div class="fabs">
+        <button id="add-lead" class="fab fab-team" hidden title="Ajouter un immeuble à la liste (équipe)">+ Immeuble</button>
+        <button id="add-place" class="fab" title="Proposer un lieu à prospecter">+ Proposer un lieu</button>
+      </div>
       <div class="placing-hint">Cliquez sur la carte à l’endroit du lieu, ou tapez son adresse dans le formulaire.</div>
     </div>
 
@@ -144,6 +147,41 @@
       </div>
       <p class="error"></p>
       <button type="submit" class="btn primary">Envoyer le lieu</button>
+    </form>
+  </template>
+
+  <template id="lead-template">
+    <form class="contrib-form lead-form">
+      <h3 class="form-title">Ajouter un immeuble</h3>
+      <label>Nom de l’immeuble / du site * <input name="name" required placeholder="Ex. Hôpital Delta — CHIREC"></label>
+      <div class="row">
+        <label>Vague *
+          <select name="wave" required><option value="1">Vague 1</option><option value="2" selected>Vague 2</option></select>
+        </label>
+        <label>Priorité *
+          <select name="priority" required><option>A</option><option selected>B</option><option>C</option></select>
+        </label>
+      </div>
+      <label>Adresse <input name="address" placeholder="Rue et numéro"></label>
+      <label>Commune <input name="municipality" placeholder="1160 Auderghem"></label>
+      <button type="button" class="btn secondary locate">Localiser sur la carte</button>
+      <p class="where muted small">Ou cliquez directement sur la carte.</p>
+      <label>Angle d’entrée <textarea name="pitch" rows="3"></textarea></label>
+      <label>Société(s) identifiée(s) <input name="companies"></label>
+      <label>Propriétaire / gestionnaire <input name="owner"></label>
+      <div class="row">
+        <label>Rôle visé dans CityWatt <input name="targetRole" placeholder="Producteur + consommateur"></label>
+        <label>Fonction à viser <input name="targetFunction"></label>
+      </div>
+      <div class="row">
+        <label>Solaire (kWc) <input name="solarKwp" placeholder="338 (est.)"></label>
+        <label>Production (MWh/an) <input name="productionMwh" type="number" min="0" step="any"></label>
+      </div>
+      <label>Consommation — borne basse (MWh/an) <input name="consumptionMwh" type="number" min="0" step="any"></label>
+      <label>Où nous en sommes <span class="muted small">(caché aux ambassadeurs)</span> <textarea name="status" rows="2"></textarea></label>
+      <p class="error"></p>
+      <button type="submit" class="btn primary">Enregistrer l’immeuble</button>
+      <button type="button" class="link danger delete-lead" hidden style="margin-top:12px">Supprimer cet immeuble</button>
     </form>
   </template>
 

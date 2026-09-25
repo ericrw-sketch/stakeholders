@@ -188,7 +188,11 @@ function selectSuggestion(id) {
     </dl>
     ${s.team_notes && state.user.role === 'admin' ? `<div class="status"><strong>Notes équipe</strong><p>${esc(s.team_notes)}</p></div>` : ''}
     <p class="muted small">L’équipe CityWatt suit ce lieu. Le statut évolue au fil de la prospection.</p>
-    ${adminConvertBlock(s.follow_up === 'Converti', 'Converti : retirer de la carte', 'Remettre sur la carte', 'convert-sugg')}`;
+    ${adminConvertBlock(s.follow_up === 'Converti', 'Converti : retirer de la carte', 'Remettre sur la carte', 'convert-sugg',
+      '<button type="button" class="btn secondary" id="promote-sugg">Transformer en immeuble</button>')}`;
+  $('#promote-sugg')?.addEventListener('click', () => startLeadForm(null, {
+    name: s.place_name, address: s.address, lat: s.lat, lng: s.lng, pitch: s.reason, fromSuggestion: s.id,
+  }));
   $('#convert-sugg')?.addEventListener('click', async () => {
     const convert = s.follow_up !== 'Converti';
     const followUp = convert ? 'Converti' : 'Retenu';
@@ -206,11 +210,12 @@ function row(label, value) {
   return `<div class="kv"><dt>${esc(label)}</dt><dd>${typeof value === 'number' ? fmt(value) : esc(value)}</dd></div>`;
 }
 
-function adminConvertBlock(isConverted, convertLabel, restoreLabel, id) {
+function adminConvertBlock(isConverted, convertLabel, restoreLabel, id, extraButton = '') {
   if (state.user.role !== 'admin') return '';
   return `<div class="admin-actions"><strong>Équipe</strong>
     ${isConverted ? '<p class="muted small">Converti : masqué sur la carte des actionnaires et ambassadeurs.</p>' : ''}
-    <button type="button" class="btn secondary" id="${id}">${isConverted ? restoreLabel : convertLabel}</button></div>`;
+    <div class="admin-buttons">${extraButton}
+    <button type="button" class="btn secondary" id="${id}">${isConverted ? restoreLabel : convertLabel}</button></div></div>`;
 }
 
 // Après conversion, le point disparaît : on ferme la fiche (sauf si l'équipe affiche les convertis).
@@ -253,8 +258,10 @@ function renderPanel(lead) {
     ${mine.length ? `<div class="mine-list"><strong>Vos propositions</strong><ul>${mine.map((c) =>
       `<li>${esc(c.contact_name)} — ${c.mode === 'intro' ? 'introduction' : 'contact transmis'}</li>`).join('')}</ul></div>` : ''}
     ${adminConvertBlock(lead.convertedAt,
-      'Converti : retirer de la carte', 'Remettre sur la carte', 'convert-lead')}
+      'Converti : retirer de la carte', 'Remettre sur la carte', 'convert-lead',
+      '<button type="button" class="btn secondary" id="edit-lead">Modifier l’immeuble</button>')}
     <div id="form-slot"></div>`;
+  $('#edit-lead')?.addEventListener('click', () => startLeadForm(lead));
   $('#convert-lead')?.addEventListener('click', async () => {
     const convert = !lead.convertedAt;
     if (convert && !confirm('Marquer cet immeuble comme converti ? Il disparaît de la carte pour les actionnaires et ambassadeurs.')) return;
@@ -328,15 +335,18 @@ $('#panel-close').addEventListener('click', () => {
 
 // --- Proposer un lieu (bouton « + ») -----------------------------------------------
 
-function draftHtml() {
-  return '<div class="pin sugg selected">+</div><span class="mk-label right">Nouveau lieu</span>';
+function draftHtml(kind) {
+  return kind === 'lead'
+    ? '<div class="pin prio-A selected">?</div><span class="mk-label right">Emplacement de l’immeuble</span>'
+    : '<div class="pin sugg selected">+</div><span class="mk-label right">Nouveau lieu</span>';
 }
 
 function placeDraft(lat, lng) {
   state.draft?.marker.hide();
-  state.draft = { lat, lng, marker: state.map.addMarker({ lat, lng, html: draftHtml(), zIndex: 30 }) };
+  const kind = $('#place-form')?.dataset.kind;
+  state.draft = { lat, lng, marker: state.map.addMarker({ lat, lng, html: draftHtml(kind), zIndex: 30 }) };
   state.draft.marker.show();
-  const form = $('#sugg-form');
+  const form = $('#place-form');
   if (form) {
     form.querySelector('.where').textContent = 'Point placé sur la carte. Cliquez ailleurs pour le déplacer.';
     form.querySelector('.where').classList.remove('error');
@@ -358,7 +368,7 @@ function startSuggestion() {
   state.map.onMapClick(placeDraft);
 
   const form = $('#sugg-template').content.firstElementChild.cloneNode(true);
-  form.id = 'sugg-form';
+  form.id = 'place-form';
   const f = form.elements;
   $('#panel-body').innerHTML = '';
   $('#panel-body').appendChild(form);
@@ -370,17 +380,7 @@ function startSuggestion() {
     form.querySelectorAll('.path').forEach((p) => p.classList.toggle('checked', $('input', p).checked));
   }));
 
-  $('.locate', form).addEventListener('click', async () => {
-    const q = [f.address.value, f.placeName.value].map((s) => s.trim()).filter(Boolean).join(', ');
-    const where = $('.where', form);
-    if (!q) { where.textContent = 'Indiquez d’abord une adresse ou un nom de lieu.'; where.classList.add('error'); return; }
-    where.textContent = 'Recherche…';
-    const hit = await state.map.geocode(`${q}, Belgique`);
-    if (!hit) { where.textContent = 'Adresse introuvable : cliquez directement sur la carte.'; where.classList.add('error'); return; }
-    placeDraft(hit.lat, hit.lng);
-    state.map.flyTo(hit.lat, hit.lng, 16);
-    if (!f.address.value.trim()) f.address.value = hit.address;
-  });
+  wireLocate(form, () => [f.address.value, f.placeName.value], f.address);
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -415,6 +415,134 @@ function startSuggestion() {
 }
 
 $('#add-place').addEventListener('click', startSuggestion);
+
+// Bouton « Localiser » : cherche l'adresse et place le point ; sinon clic sur la carte.
+function wireLocate(form, parts, addressInput) {
+  $('.locate', form).addEventListener('click', async () => {
+    const q = parts().map((x) => x.trim()).filter(Boolean).join(', ');
+    const where = $('.where', form);
+    if (!q) { where.textContent = 'Indiquez d’abord une adresse ou un nom de lieu.'; where.classList.add('error'); return; }
+    where.textContent = 'Recherche…';
+    const hit = await state.map.geocode(`${q}, Belgique`);
+    if (!hit) { where.textContent = 'Adresse introuvable : cliquez directement sur la carte.'; where.classList.add('error'); return; }
+    placeDraft(hit.lat, hit.lng);
+    state.map.flyTo(hit.lat, hit.lng, 16);
+    if (!addressInput.value.trim()) addressInput.value = hit.address;
+  });
+}
+
+// --- Immeubles : ajout et modification par l'équipe ----------------------------------
+
+function slugify(text) {
+  return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+}
+
+const LEAD_FIELDS = [ // champ du formulaire, colonne amb_leads, clé dans state.leads
+  ['name', 'name', 'name'], ['address', 'address', 'address'], ['municipality', 'municipality', 'municipality'],
+  ['pitch', 'pitch', 'pitch'], ['companies', 'companies', 'companies'], ['owner', 'owner', 'owner'],
+  ['targetRole', 'target_role', 'role'], ['targetFunction', 'target_function', 'targetFunction'],
+  ['solarKwp', 'solar_kwp', 'solarKwp'],
+];
+
+// lead : immeuble à modifier (null pour un nouveau) ; prefill : valeurs de départ (lieu proposé transformé).
+function startLeadForm(lead = null, prefill = {}) {
+  clearSelection();
+  applyFilters();
+  document.body.classList.add('placing');
+  state.map.onMapClick(placeDraft);
+
+  const form = $('#lead-template').content.firstElementChild.cloneNode(true);
+  form.id = 'place-form';
+  form.dataset.kind = 'lead';
+  const f = form.elements;
+  $('#panel-body').innerHTML = '';
+  $('#panel-body').appendChild(form);
+  openPanel();
+
+  const src = lead || prefill;
+  for (const [input, , key] of LEAD_FIELDS) if (src[key] != null) f[input].value = src[key];
+  if (src.wave) f.wave.value = String(src.wave);
+  if (src.priority) f.priority.value = src.priority;
+  if (src.productionMwh != null) f.productionMwh.value = src.productionMwh;
+  if (src.consumptionMwh != null) f.consumptionMwh.value = src.consumptionMwh;
+  if (src.status) f.status.value = src.status;
+  if (lead) $('.form-title', form).textContent = 'Modifier l’immeuble';
+  if (src.lat != null) { placeDraft(src.lat, src.lng); state.map.flyTo(src.lat, src.lng, 15); }
+
+  wireLocate(form, () => [f.address.value, f.municipality.value, f.name.value], f.address);
+
+  const del = $('.delete-lead', form);
+  del.hidden = !lead;
+  del.addEventListener('click', async () => {
+    const n = lead.contributionCount ? ` et les ${lead.contributionCount} contact(s) proposé(s) pour lui` : '';
+    if (!confirm(`Supprimer définitivement « ${lead.name} »${n} ? Pour le garder en historique, utilisez plutôt « Converti ».`)) return;
+    const { error } = await sb.from('amb_leads').delete().eq('id', lead.id);
+    if (error) { console.error(error); $('.error', form).textContent = 'Suppression impossible.'; return; }
+    state.markers.get(lead.id)?.hide();
+    state.markers.delete(lead.id);
+    state.leads = state.leads.filter((l) => l !== lead);
+    cancelDraft();
+    $('#panel').hidden = true;
+    applyFilters();
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const err = $('.error', form);
+    err.textContent = '';
+    if (!state.draft) { err.textContent = 'Placez l’immeuble sur la carte (clic sur la carte ou bouton « Localiser »).'; return; }
+    const num = (v) => (v === '' ? null : Number(v));
+    const row = {
+      id: lead ? lead.id : `${slugify(f.name.value)}-${Math.random().toString(36).slice(2, 6)}`,
+      wave: Number(f.wave.value),
+      priority: f.priority.value,
+      production_mwh: num(f.productionMwh.value),
+      consumption_mwh: num(f.consumptionMwh.value),
+      lat: state.draft.lat,
+      lng: state.draft.lng,
+      updated_at: new Date().toISOString(),
+    };
+    for (const [input, col] of LEAD_FIELDS) row[col] = f[input].value.trim() || null;
+    const { error } = await sb.from('amb_leads').upsert(row);
+    if (error) { console.error(error); err.textContent = 'Enregistrement impossible. Réessayez.'; return; }
+    const status = f.status.value.trim() || null;
+    const st = await sb.from('amb_lead_status').upsert({ lead_id: row.id, status });
+    if (st.error) console.error(st.error);
+
+    const saved = {
+      ...(lead || { contributionCount: 0, convertedAt: null }),
+      id: row.id, wave: row.wave, priority: row.priority, name: row.name, address: row.address,
+      municipality: row.municipality, solarKwp: row.solar_kwp, productionMwh: row.production_mwh,
+      companies: row.companies, consumptionMwh: row.consumption_mwh, role: row.target_role, owner: row.owner,
+      pitch: row.pitch, targetFunction: row.target_function, lat: row.lat, lng: row.lng, status,
+    };
+    if (lead) {
+      Object.assign(lead, saved);
+      state.markers.get(lead.id)?.hide(); // position ou étiquette modifiée : on recrée le marqueur
+    } else {
+      state.leads.push(saved);
+    }
+    const target = lead || saved;
+    state.markers.set(target.id, state.map.addMarker({
+      lat: target.lat, lng: target.lng, html: leadHtml(target, false), title: target.name, zIndex: 10,
+      onClick: () => select(target.id),
+    }));
+    if (prefill.fromSuggestion) await markSuggestionConverted(prefill.fromSuggestion);
+    cancelDraft();
+    select(target.id);
+    $('#panel-body').insertAdjacentHTML('afterbegin', `<div class="success">Immeuble ${lead ? 'modifié' : 'ajouté'}.</div>`);
+  });
+}
+
+async function markSuggestionConverted(id) {
+  const s = state.suggestions.find((x) => x.id === id);
+  const { error } = await sb.from('amb_suggestions').update({ follow_up: 'Converti' }).eq('id', id);
+  if (error) { console.error(error); return; }
+  if (s) s.follow_up = 'Converti';
+}
+
+$('#add-lead').addEventListener('click', () => startLeadForm());
 
 // --- Session -----------------------------------------------------------------
 
@@ -501,6 +629,7 @@ async function start() {
   $('#user-name').textContent = state.user.name;
   $('#admin-link').hidden = state.user.role !== 'admin';
   $('#converted-filter').hidden = state.user.role !== 'admin';
+  $('#add-lead').hidden = state.user.role !== 'admin';
   const [map] = await Promise.all([createMap($('#map')), loadData()]);
   state.map = map;
   map.onZoom(updateLabels);
