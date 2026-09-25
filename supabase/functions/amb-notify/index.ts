@@ -7,13 +7,12 @@
 //   ODOO_API_KEY    clé API de cet utilisateur (Odoo → Mon profil → Sécurité du compte → Clés API)
 // Optionnels :
 //   ODOO_URL        https://raysun.odoo.com par défaut
-//   ODOO_DB         raysun par défaut
+//   ODOO_DB         nom de la base ; détecté automatiquement s'il n'y en a qu'une sur le serveur
 //   NOTIFY_EMAIL    eric.rw@raysun.solar par défaut (plusieurs adresses séparées par des virgules)
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const SITE = 'https://citywatt-ambassadeurs.netlify.app';
 const ODOO_URL = Deno.env.get('ODOO_URL') ?? 'https://raysun.odoo.com';
-const ODOO_DB = Deno.env.get('ODOO_DB') ?? 'raysun';
 const NOTIFY_EMAIL = Deno.env.get('NOTIFY_EMAIL') ?? 'eric.rw@raysun.solar';
 const ROLES: Record<string, string> = { shareholder: 'Actionnaire', ambassador: 'Ambassadeur', admin: 'Équipe' };
 
@@ -40,10 +39,25 @@ async function odoo(service: string, method: string, args: unknown[]) {
   return json.result;
 }
 
+// Nom de la base Odoo : secret ODOO_DB, sinon la seule base listée par le serveur, sinon le sous-domaine.
+async function odooDb() {
+  const fromEnv = Deno.env.get('ODOO_DB');
+  if (fromEnv) return fromEnv;
+  try {
+    const list = await odoo('db', 'list', []);
+    if (Array.isArray(list) && list.length === 1) return list[0];
+    console.error('Bases Odoo disponibles :', list);
+  } catch (e) {
+    console.error('Liste des bases Odoo indisponible :', e);
+  }
+  return new URL(ODOO_URL).hostname.split('.')[0];
+}
+
 async function sendViaOdoo(subject: string, html: string) {
   const login = Deno.env.get('ODOO_USERNAME');
   const key = Deno.env.get('ODOO_API_KEY');
   if (!login || !key) throw new Error('Secrets ODOO_USERNAME / ODOO_API_KEY manquants');
+  const ODOO_DB = await odooDb();
   const uid = await odoo('common', 'login', [ODOO_DB, login, key]);
   if (!uid) throw new Error('Connexion Odoo refusée (login, clé API ou base incorrects)');
   const mailId = await odoo('object', 'execute_kw', [ODOO_DB, uid, key, 'mail.mail', 'create', [{
