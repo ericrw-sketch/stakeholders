@@ -630,6 +630,7 @@ async function start() {
   $('#admin-link').hidden = state.user.role !== 'admin';
   $('#converted-filter').hidden = state.user.role !== 'admin';
   $('#add-lead').hidden = state.user.role !== 'admin';
+  $('#tracker-link').hidden = state.user.role !== 'admin';
   const [map] = await Promise.all([createMap($('#map')), loadData()]);
   state.map = map;
   map.onZoom(updateLabels);
