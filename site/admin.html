@@ -20,7 +20,12 @@
     .stats { display: flex; gap: 10px; flex-wrap: wrap; }
     .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; }
     .stat b { display: block; font-size: 22px; }
-    .member-form { display: grid; grid-template-columns: 2fr 2fr 1fr auto; gap: 8px; align-items: end; margin-bottom: 10px; }
+    .member-form { display: grid; grid-template-columns: 2fr 2fr 1fr 2fr auto; gap: 8px; align-items: end; margin-bottom: 10px; }
+    .pw { display: flex; gap: 6px; }
+    .pw input { flex: 1; }
+    .pw .btn { padding: 8px 10px; }
+    .credentials { background: var(--accent-soft); border-radius: 8px; padding: 12px 14px; margin: 8px 0 12px; font-size: 14px; }
+    .credentials pre { white-space: pre-wrap; font: 13px/1.5 ui-monospace, Menlo, monospace; background: #fff; border-radius: 6px; padding: 10px; margin: 8px 0; }
     .member-form label { font-size: 13px; }
     .member-form .btn { width: auto; }
     @media (max-width: 760px) { .member-form { grid-template-columns: 1fr; } }
@@ -83,7 +88,10 @@
     </div>
 
     <div class="toolbar"><h2>Qui a accès</h2></div>
-    <p class="muted small">Pour inviter quelqu’un vous-même : ajoutez son email et son rôle, puis envoyez-lui l’adresse de la plateforme. Il clique sur « Recevoir un lien de connexion » avec cet email et a accès directement. Toute autre personne doit passer par une demande, que vous validez ci-dessus.</p>
+    <p class="muted small">Deux façons de donner accès :
+      <b>avec un mot de passe</b> (recommandé) — remplissez le mot de passe ou cliquez sur « Générer », puis transmettez vous-même les identifiants à la personne ;
+      <b>sans mot de passe</b> — la personne se connecte avec « Recevoir un lien de connexion » envoyé à cet email.
+      Pour changer le mot de passe de quelqu’un, refaites la même chose avec son email.</p>
     <form class="member-form" id="member-form">
       <label>Email <input name="email" type="email" required></label>
       <label>Nom affiché <input name="name" required></label>
@@ -94,9 +102,14 @@
           <option value="admin">Équipe</option>
         </select>
       </label>
+      <label>Mot de passe <span class="muted">(optionnel)</span>
+        <span class="pw"><input name="password" type="text" autocomplete="off" minlength="8" placeholder="8 caractères minimum">
+        <button type="button" class="btn secondary" id="gen-password">Générer</button></span>
+      </label>
       <button class="btn primary" type="submit">Ajouter</button>
     </form>
     <p class="error" id="member-error"></p>
+    <div class="credentials" id="credentials" hidden></div>
     <div class="table-wrap">
       <table>
         <thead><tr><th>Nom</th><th>Email</th><th>Rôle</th><th>Statut</th></tr></thead>
@@ -161,12 +174,51 @@
         `<tr><td>${esc(m.name)}</td><td>${esc(m.email)}</td><td>${esc(ROLES[m.role])}</td><td>${m.pending ? 'Invité, pas encore connecté' : 'Actif'}</td></tr>`).join('');
     }
 
+    // Mot de passe lisible (sans 0/O, 1/l/I) à dicter ou copier facilement.
+    document.getElementById('gen-password').addEventListener('click', () => {
+      const chars = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      const rnd = crypto.getRandomValues(new Uint32Array(12));
+      document.querySelector('#member-form [name=password]').value =
+        Array.from(rnd, (n) => chars[n % chars.length]).join('').replace(/(.{4})(?=.)/g, '$1-');
+    });
+
     document.getElementById('member-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const f = Object.fromEntries(new FormData(e.target).entries());
-      const { error } = await sb.rpc('amb_upsert_member', { p_email: f.email, p_role: f.role, p_name: f.name });
-      document.getElementById('member-error').textContent = error ? error.message : '';
-      if (!error) { e.target.reset(); loadMembers(); }
+      const errEl = document.getElementById('member-error');
+      const box = document.getElementById('credentials');
+      errEl.textContent = '';
+      box.hidden = true;
+      if (!f.password) {
+        // Sans mot de passe : invitation, la personne se connectera par lien email.
+        const { error } = await sb.rpc('amb_upsert_member', { p_email: f.email, p_role: f.role, p_name: f.name });
+        errEl.textContent = error ? error.message : '';
+        if (!error) { e.target.reset(); loadMembers(); }
+        return;
+      }
+      // Avec mot de passe : compte créé (ou mot de passe changé) côté serveur, identifiants à transmettre.
+      const { data, error } = await sb.functions.invoke('amb-admin-user', {
+        body: { email: f.email, name: f.name, role: f.role, password: f.password },
+      });
+      if (error || !data?.ok) {
+        let msg = data?.error;
+        try { msg = msg || (await error.context.json()).error; } catch {}
+        errEl.textContent = msg || 'Création du compte impossible.';
+        return;
+      }
+      const site = location.origin + location.pathname.replace(/admin\.html$/, '');
+      const message = `Bonjour ${f.name},\n\nVoici votre accès à l’espace ambassadeurs CityWatt :\n${site}\n\nEmail : ${data.email}\nMot de passe : ${f.password}\n\nÀ bientôt,\nEric`;
+      box.innerHTML = `<strong>${data.existing ? 'Mot de passe mis à jour' : 'Compte créé'} pour ${esc(data.email)}.</strong>
+        Transmettez-lui ce message (par email, WhatsApp…) :
+        <pre id="credentials-text">${esc(message)}</pre>
+        <button type="button" class="btn secondary" id="copy-credentials">Copier le message</button>`;
+      box.hidden = false;
+      document.getElementById('copy-credentials').addEventListener('click', async (ev) => {
+        await navigator.clipboard.writeText(message).catch(() => {});
+        ev.target.textContent = 'Copié ✓';
+      });
+      e.target.reset();
+      loadMembers();
     });
 
     // CSV au format de l'onglet « Vos contacts » ; « ; » et BOM pour qu'Excel (réglages belges) l'ouvre correctement.
