@@ -112,7 +112,7 @@
     <div class="credentials" id="credentials" hidden></div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Nom</th><th>Email</th><th>Rôle</th><th>Statut</th></tr></thead>
+        <thead><tr><th>Nom</th><th>Email</th><th>Rôle</th><th>Statut</th><th></th></tr></thead>
         <tbody id="members"></tbody>
       </table>
     </div>
@@ -167,19 +167,77 @@
       }));
     }
 
+    let members = [];
+    let myEmail = '';
+
     async function loadMembers() {
       const { data, error } = await sb.rpc('amb_list_members');
       if (error) throw error;
-      document.getElementById('members').innerHTML = data.map((m) =>
-        `<tr><td>${esc(m.name)}</td><td>${esc(m.email)}</td><td>${esc(ROLES[m.role])}</td><td>${m.pending ? 'Invité, pas encore connecté' : 'Actif'}</td></tr>`).join('');
+      members = data;
+      document.getElementById('members').innerHTML = data.map((m, i) => `
+        <tr><td>${esc(m.name)}</td><td>${esc(m.email)}</td><td>${esc(ROLES[m.role])}</td>
+          <td>${m.pending ? 'Invité, pas encore connecté' : 'Actif'}</td>
+          <td style="white-space:nowrap">
+            <button class="link" data-reset="${i}" title="Créer un nouveau mot de passe à lui transmettre">Nouveau mot de passe</button>
+            ${m.email.toLowerCase() === myEmail ? '' : `· <button class="link danger" data-remove="${i}">Retirer l’accès</button>`}
+          </td></tr>`).join('');
     }
+
+    function generatePassword() {
+      const chars = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      const rnd = crypto.getRandomValues(new Uint32Array(12));
+      return Array.from(rnd, (n) => chars[n % chars.length]).join('').replace(/(.{4})(?=.)/g, '$1-');
+    }
+
+    // Crée le compte (ou change son mot de passe) côté serveur, puis affiche le message à transmettre.
+    async function setPassword({ email, name, role, password }) {
+      const errEl = document.getElementById('member-error');
+      const box = document.getElementById('credentials');
+      errEl.textContent = '';
+      box.hidden = true;
+      const { data, error } = await sb.functions.invoke('amb-admin-user', { body: { email, name, role, password } });
+      if (error || !data?.ok) {
+        let msg = data?.error;
+        try { msg = msg || (await error.context.json()).error; } catch {}
+        errEl.textContent = msg || 'Création du compte impossible.';
+        return false;
+      }
+      const site = location.origin + location.pathname.replace(/admin\.html$/, '');
+      const message = `Bonjour ${name},\n\nVoici votre accès à l’espace ambassadeurs CityWatt :\n${site}\n\nEmail : ${data.email}\nMot de passe : ${password}\n\nÀ bientôt,\nEric`;
+      box.innerHTML = `<strong>${data.existing ? 'Nouveau mot de passe' : 'Compte créé'} pour ${esc(data.email)}.</strong>
+        Transmettez-lui ce message (par email, WhatsApp…) :
+        <pre id="credentials-text">${esc(message)}</pre>
+        <button type="button" class="btn secondary" id="copy-credentials">Copier le message</button>`;
+      box.hidden = false;
+      box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      document.getElementById('copy-credentials').addEventListener('click', async (ev) => {
+        await navigator.clipboard.writeText(message).catch(() => {});
+        ev.target.textContent = 'Copié ✓';
+      });
+      await loadMembers();
+      return true;
+    }
+
+    document.getElementById('members').addEventListener('click', async (e) => {
+      const reset = e.target.closest('[data-reset]');
+      const remove = e.target.closest('[data-remove]');
+      if (reset) {
+        const m = members[reset.dataset.reset];
+        if (!confirm(`Créer un nouveau mot de passe pour ${m.name} (${m.email}) ? L’ancien ne fonctionnera plus.`)) return;
+        await setPassword({ email: m.email, name: m.name, role: m.role, password: generatePassword() });
+      }
+      if (remove) {
+        const m = members[remove.dataset.remove];
+        if (!confirm(`Retirer l’accès de ${m.name} (${m.email}) ? Ce qu’il ou elle a déjà proposé reste dans l’historique.`)) return;
+        const { error } = await sb.rpc('amb_remove_member', { p_email: m.email });
+        document.getElementById('member-error').textContent = error ? error.message : '';
+        if (!error) loadMembers();
+      }
+    });
 
     // Mot de passe lisible (sans 0/O, 1/l/I) à dicter ou copier facilement.
     document.getElementById('gen-password').addEventListener('click', () => {
-      const chars = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-      const rnd = crypto.getRandomValues(new Uint32Array(12));
-      document.querySelector('#member-form [name=password]').value =
-        Array.from(rnd, (n) => chars[n % chars.length]).join('').replace(/(.{4})(?=.)/g, '$1-');
+      document.querySelector('#member-form [name=password]').value = generatePassword();
     });
 
     document.getElementById('member-form').addEventListener('submit', async (e) => {
@@ -197,28 +255,7 @@
         return;
       }
       // Avec mot de passe : compte créé (ou mot de passe changé) côté serveur, identifiants à transmettre.
-      const { data, error } = await sb.functions.invoke('amb-admin-user', {
-        body: { email: f.email, name: f.name, role: f.role, password: f.password },
-      });
-      if (error || !data?.ok) {
-        let msg = data?.error;
-        try { msg = msg || (await error.context.json()).error; } catch {}
-        errEl.textContent = msg || 'Création du compte impossible.';
-        return;
-      }
-      const site = location.origin + location.pathname.replace(/admin\.html$/, '');
-      const message = `Bonjour ${f.name},\n\nVoici votre accès à l’espace ambassadeurs CityWatt :\n${site}\n\nEmail : ${data.email}\nMot de passe : ${f.password}\n\nÀ bientôt,\nEric`;
-      box.innerHTML = `<strong>${data.existing ? 'Mot de passe mis à jour' : 'Compte créé'} pour ${esc(data.email)}.</strong>
-        Transmettez-lui ce message (par email, WhatsApp…) :
-        <pre id="credentials-text">${esc(message)}</pre>
-        <button type="button" class="btn secondary" id="copy-credentials">Copier le message</button>`;
-      box.hidden = false;
-      document.getElementById('copy-credentials').addEventListener('click', async (ev) => {
-        await navigator.clipboard.writeText(message).catch(() => {});
-        ev.target.textContent = 'Copié ✓';
-      });
-      e.target.reset();
-      loadMembers();
+      if (await setPassword({ email: f.email, name: f.name, role: f.role, password: f.password })) e.target.reset();
     });
 
     // CSV au format de l'onglet « Vos contacts » ; « ; » et BOM pour qu'Excel (réglages belges) l'ouvre correctement.
@@ -312,6 +349,7 @@
       const who = await currentMember();
       if (!who) { document.getElementById('login').hidden = false; return; }
       if (who.member?.role !== 'admin') { location.href = './'; return; }
+      myEmail = (who.user.email || '').toLowerCase();
       document.getElementById('login').hidden = true;
       document.getElementById('content').hidden = false;
       await Promise.all([loadContributions(), loadMembers(), loadRequests(), loadSuggestions()]);
