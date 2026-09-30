@@ -72,19 +72,38 @@ async function roleOf(userId: string) {
   return data ? ROLES[data.role] ?? data.role : null;
 }
 
+// Données énergie communes aux contacts et lieux proposés (migration 008).
+function energyRows(r: Record<string, any>): [string, unknown][] {
+  const formula = (f: unknown, detail: unknown, bi = false) =>
+    [f, bi ? 'bi-horaire' : null, detail].filter(Boolean).join(' · ');
+  return [
+    ['Consommation (MWh/an)', r.consumption_mwh], ['Injection (MWh/an)', r.injection_mwh],
+    ['Fournisseur', r.supplier],
+    ['Formule de prélèvement', formula(r.offtake_formula, r.offtake_detail, r.offtake_bihoraire)],
+    ['Formule d’injection', formula(r.injection_formula, r.injection_detail)],
+    ['Facture', r.invoice_path ? 'Jointe : à télécharger dans le suivi équipe (supprimée automatiquement après 10 jours)' : null],
+  ];
+}
+
 async function compose(tableName: string, r: Record<string, any>) {
   if (tableName === 'amb_contributions') {
     const { data: lead } = await sb.from('amb_leads').select('name').eq('id', r.lead_id).maybeSingle();
     const who = `${r.author_name} (${await roleOf(r.author_id)})`;
-    const path = r.mode === 'intro' ? 'fait l’introduction' : 'donne le contact';
+    const PATHS: Record<string, [string, string]> = {
+      intro: ['fait l’introduction', 'Je fais l’introduction'],
+      contact: ['donne le contact', 'Je vous donne le contact'],
+      data: ['transmet des données', 'J’ai des données sur ce bâtiment'],
+    };
+    const [path, pathLabel] = PATHS[r.mode] ?? PATHS.contact;
     return {
       subject: `[CityWatt] ${r.author_name} ${path} — ${lead?.name ?? r.lead_id}`,
-      html: `<p><b>${esc(who)}</b> propose un contact pour <b>${esc(lead?.name)}</b>.</p>` + table([
-        ['Chemin', r.mode === 'intro' ? 'Je fais l’introduction' : 'Je vous donne le contact'],
+      html: `<p><b>${esc(who)}</b> ${r.mode === 'data' ? 'transmet des données' : 'propose un contact'} pour <b>${esc(lead?.name)}</b>.</p>` + table([
+        ['Chemin', pathLabel],
         ['Contact', r.contact_name], ['Fonction', r.contact_function], ['Société', r.contact_company],
         ['Email', r.contact_email], ['Téléphone', r.contact_phone], ['Lien', r.relation],
         ['Qualité du lien', r.strength], ['Quand', r.when_text], ['Remarques', r.remarks],
         ['Peut être cité', r.mode === 'contact' ? (r.mention_name ? 'Oui' : 'Non') : null],
+        ...energyRows(r),
       ]) + `<p><a href="${SITE}/admin.html">Ouvrir le suivi équipe</a></p>`,
     };
   }
@@ -94,8 +113,11 @@ async function compose(tableName: string, r: Record<string, any>) {
       subject: `[CityWatt] Nouveau lieu proposé par ${r.author_name} — ${r.place_name}`,
       html: `<p><b>${esc(who)}</b> propose un lieu à prospecter : <b>${esc(r.place_name)}</b>.</p>` + table([
         ['Adresse', r.address], ['Pourquoi', r.reason],
+        ['Type de bâtiment', r.building_type], ['Région', r.region],
+        ['Installation PV', [r.has_pv, r.pv_kwp != null ? `${r.pv_kwp} kWc` : null].filter(Boolean).join(' · ')],
         ['Contact sur place', r.has_contact ? r.contact_name : 'Pas de contact'],
         ['Fonction', r.contact_function], ['Email', r.contact_email], ['Téléphone', r.contact_phone], ['Lien', r.relation],
+        ...energyRows(r),
       ]) + `<p><a href="${SITE}/#lieu-${r.id}">Voir sur la carte</a> · <a href="${SITE}/admin.html">Suivi équipe</a></p>`,
     };
   }

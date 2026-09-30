@@ -78,8 +78,8 @@ function updateLabels() {
 // Points convertis : retirés de la carte. Seule l'équipe peut les réafficher.
 const showConverted = () => state.user.role === 'admin' && $('#show-converted').checked;
 
-function matches(lead, q, waves) {
-  if (!waves.has(lead.wave)) return false;
+function matches(lead, q, waves, prios) {
+  if (!waves.has(lead.wave) || !prios.has(lead.priority)) return false;
   if (lead.convertedAt && !showConverted()) return false;
   if (!q) return true;
   const hay = [lead.name, lead.address, lead.municipality, lead.companies, lead.owner].join(' ').toLowerCase();
@@ -89,11 +89,12 @@ function matches(lead, q, waves) {
 function applyFilters() {
   const q = $('#search').value.trim().toLowerCase();
   const waves = new Set([...document.querySelectorAll('[data-wave]')].filter((i) => i.checked).map((i) => Number(i.dataset.wave)));
+  const prios = new Set([...document.querySelectorAll('[data-prio]')].filter((i) => i.checked).map((i) => i.dataset.prio));
   const showMembers = $('#show-members').checked;
   const showSugg = $('#show-suggestions').checked;
   const order = { A: 0, B: 1, C: 2 };
   const visible = state.leads
-    .filter((l) => matches(l, q, waves))
+    .filter((l) => matches(l, q, waves, prios))
     .sort((a, b) => a.wave - b.wave || order[a.priority] - order[b.priority]);
 
   for (const lead of state.leads) {
@@ -132,7 +133,7 @@ function applyFilters() {
       const li = document.createElement('li');
       li.className = s.id === state.selectedId ? 'active' : '';
       li.innerHTML = `<i class="dot sugg"></i><div><strong>${esc(s.place_name)}</strong>
-        <small>${esc(s.follow_up)}${state.user.role === 'admin' ? ` · par ${esc(s.author_name)}` : ''}</small></div>`;
+        <small>${s.priority ? `Prio ${esc(s.priority)} · ` : ''}${esc(s.follow_up)}${state.user.role === 'admin' ? ` · par ${esc(s.author_name)}` : ''}</small></div>`;
       li.addEventListener('click', () => selectSuggestion(s.id));
       list.appendChild(li);
     }
@@ -174,6 +175,7 @@ function selectSuggestion(id) {
   $('#panel-body').innerHTML = `
     <div class="panel-head">
       <span class="tag sugg">Lieu proposé</span>
+      ${s.priority ? `<span class="tag prio-${esc(s.priority)}">Prio ${esc(s.priority)}</span>` : ''}
       <span class="tag">${esc(s.follow_up)}</span>
       <h2>${esc(s.place_name)}</h2>
       ${s.address ? `<p class="muted">${esc(s.address)}</p>` : ''}
@@ -185,11 +187,18 @@ function selectSuggestion(id) {
       ${row('Contact sur place', s.has_contact ? [s.contact_name, s.contact_function].filter(Boolean).join(', ') : 'Pas de contact')}
       ${s.has_contact ? row('Coordonnées', [s.contact_email, s.contact_phone].filter(Boolean).join(' · ')) : ''}
       ${s.has_contact ? row('Lien', s.relation) : ''}
+      ${row('Type de bâtiment', s.building_type)}
+      ${row('Région', s.region)}
+      ${row('Panneaux solaires', [s.has_pv, s.pv_kwp != null ? `${fmt(s.pv_kwp)} kWc` : null].filter(Boolean).join(' · '))}
+      ${energyRowsHtml(s)}
+      ${row('Facture', s.invoice_path ? 'Transmise à l’équipe RaYSun' : s.invoice_uploaded_at ? 'Supprimée (conservée 10 jours)' : null)}
     </dl>
+    ${s.invoice_path && state.user.role === 'admin' ? '<button type="button" class="btn secondary" id="open-invoice">📄 Voir la facture</button>' : ''}
     ${s.team_notes && state.user.role === 'admin' ? `<div class="status"><strong>Notes équipe</strong><p>${esc(s.team_notes)}</p></div>` : ''}
     <p class="muted small">L’équipe CityWatt suit ce lieu. Le statut évolue au fil de la prospection.</p>
     ${adminConvertBlock(s.follow_up === 'Converti', 'Converti : retirer de la carte', 'Remettre sur la carte', 'convert-sugg',
       '<button type="button" class="btn secondary" id="promote-sugg">Transformer en immeuble</button>')}`;
+  $('#open-invoice')?.addEventListener('click', () => openInvoice(s.invoice_path));
   $('#promote-sugg')?.addEventListener('click', () => startLeadForm(null, {
     name: s.place_name, address: s.address, lat: s.lat, lng: s.lng, pitch: s.reason, fromSuggestion: s.id,
   }));
@@ -254,9 +263,9 @@ function renderPanel(lead) {
       ${row('Consommation — borne basse (MWh/an)', lead.consumptionMwh)}
     </dl>
     ${lead.status ? `<div class="status"><strong>Où nous en sommes</strong><p>${esc(lead.status)}</p></div>` : ''}
-    ${lead.contributionCount ? `<p class="muted small">${lead.contributionCount} contact(s) déjà proposé(s) pour cet immeuble.</p>` : ''}
+    ${lead.contributionCount ? `<p class="muted small">${lead.contributionCount} proposition(s) déjà reçue(s) pour cet immeuble.</p>` : ''}
     ${mine.length ? `<div class="mine-list"><strong>Vos propositions</strong><ul>${mine.map((c) =>
-      `<li>${esc(c.contact_name)} — ${c.mode === 'intro' ? 'introduction' : 'contact transmis'}</li>`).join('')}</ul></div>` : ''}
+      `<li>${esc(c.contact_name || 'Données du bâtiment')} — ${MODE_LABELS[c.mode]}${c.invoice_path ? ' · facture jointe' : ''}</li>`).join('')}</ul></div>` : ''}
     ${adminConvertBlock(lead.convertedAt,
       'Converti : retirer de la carte', 'Remettre sur la carte', 'convert-lead',
       '<button type="button" class="btn secondary" id="edit-lead">Modifier l’immeuble</button>')}
@@ -274,12 +283,79 @@ function renderPanel(lead) {
   openPanel();
 }
 
+// --- Données énergie et dernière facture (fiche immeuble et « Proposer un lieu ») -------
+
+const INVOICE_TYPES = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+  webp: 'image/webp', heic: 'image/heic', heif: 'image/heif' };
+
+function mountEnergy(form) {
+  const block = $('#energy-template').content.firstElementChild.cloneNode(true);
+  $('.energy-slot', form).replaceWith(block);
+  const f = form.elements;
+  f.invoice.addEventListener('change', () => { $('.invoice-confirm', block).hidden = !f.invoice.files.length; });
+}
+
+// Colonnes communes à amb_contributions et amb_suggestions ; `filled` : au moins une donnée saisie.
+function readEnergy(form) {
+  const f = form.elements;
+  const num = (v) => (v === '' ? null : Number(v));
+  const text = (v) => v.trim() || null;
+  const cols = {
+    consumption_mwh: num(f.consumptionMwh.value),
+    injection_mwh: num(f.injectionMwh.value),
+    supplier: text(f.supplier.value),
+    offtake_formula: f.offtakeFormula.value || null,
+    offtake_bihoraire: f.offtakeBihoraire.checked,
+    offtake_detail: text(f.offtakeDetail.value),
+    injection_formula: f.injectionFormula.value || null,
+    injection_detail: text(f.injectionDetail.value),
+  };
+  const filled = Object.values(cols).some((v) => v != null && v !== false);
+  return { cols, filled, file: f.invoice.files[0] || null };
+}
+
+// Vérifie la facture puis la dépose dans le dossier de l'auteur (lisible par l'équipe seulement).
+// Renvoie son chemin, ou lève une erreur au message lisible.
+async function uploadInvoice(form, file) {
+  if (!file) return null;
+  const ext = file.name.split('.').pop().toLowerCase();
+  const type = file.type || INVOICE_TYPES[ext] || '';
+  if (!Object.values(INVOICE_TYPES).includes(type)) throw new Error('La facture doit être un PDF ou une photo (JPG, PNG, HEIC).');
+  if (file.size > 10 * 1024 * 1024) throw new Error('La facture dépasse 10 Mo.');
+  if (!form.elements.invoiceRecent.checked) throw new Error('Confirmez que la facture date de moins de 3 mois.');
+  const cleanExt = Object.keys(INVOICE_TYPES).find((k) => INVOICE_TYPES[k] === type);
+  const path = `${state.user.id}/${crypto.randomUUID()}.${cleanExt}`;
+  const { error } = await sb.storage.from('amb-invoices').upload(path, file, { contentType: type });
+  if (error) { console.error(error); throw new Error('L’envoi de la facture a échoué. Réessayez.'); }
+  return path;
+}
+
+function energyRowsHtml(r) {
+  const formula = (f, detail, bi) => [f, bi ? 'bi-horaire' : null, detail].filter(Boolean).join(' · ');
+  return row('Consommation (MWh/an)', r.consumption_mwh) + row('Injection (MWh/an)', r.injection_mwh)
+    + row('Fournisseur', r.supplier)
+    + row('Formule de prélèvement', formula(r.offtake_formula, r.offtake_detail, r.offtake_bihoraire))
+    + row('Formule d’injection', formula(r.injection_formula, r.injection_detail));
+}
+
+// Lien temporaire (2 min) vers une facture : seule l'équipe y a droit (règles du stockage).
+async function openInvoice(path) {
+  const win = window.open('', '_blank'); // ouvert tout de suite pour ne pas être bloqué comme pop-up
+  const { data, error } = await sb.storage.from('amb-invoices').createSignedUrl(path, 120);
+  if (error) { win?.close(); alert('Facture introuvable (elle est supprimée après 10 jours).'); return; }
+  if (win) win.location = data.signedUrl; else location.href = data.signedUrl;
+}
+
+const MODE_LABELS = { intro: 'introduction', contact: 'contact transmis', data: 'données transmises' };
+
 function mountForm(lead) {
   const form = $('#form-template').content.firstElementChild.cloneNode(true);
+  mountEnergy(form);
   const fields = $('.fields', form);
   const setMode = (mode) => {
     fields.hidden = false;
     form.dataset.mode = mode;
+    form.elements.contactName.required = mode !== 'data';
     form.querySelectorAll('.path').forEach((p) => p.classList.toggle('checked', $('input', p).checked));
   };
   form.querySelectorAll('input[name=mode]').forEach((r) => r.addEventListener('change', () => setMode(r.value)));
@@ -290,25 +366,42 @@ function mountForm(lead) {
     const v = Object.fromEntries(fd.entries());
     const err = $('.error', form);
     err.textContent = '';
+    const isData = v.mode === 'data';
+    const energy = readEnergy(form);
     const row = {
       lead_id: lead.id,
       mode: v.mode,
-      contact_name: v.contactName.trim(),
-      contact_function: v.contactFunction || null,
-      contact_company: v.contactCompany || null,
+      contact_name: isData ? null : v.contactName.trim(),
+      contact_function: isData ? null : v.contactFunction || null,
+      contact_company: isData ? null : v.contactCompany || null,
       contact_email: v.mode === 'contact' ? v.contactEmail || null : null,
       contact_phone: v.mode === 'contact' ? v.contactPhone || null : null,
-      relation: v.relation || null,
-      strength: v.strength || null,
+      relation: isData ? null : v.relation || null,
+      strength: isData ? null : v.strength || null,
       mention_name: v.mode === 'contact' ? fd.has('mentionName') : true,
       when_text: v.mode === 'intro' ? v.when || null : null,
       remarks: v.remarks || null,
+      ...energy.cols,
     };
     if (v.mode === 'contact' && !row.contact_email && !row.contact_phone) {
       err.textContent = 'Indiquez au moins un email ou un téléphone pour ce contact.';
       return;
     }
+    if (isData && !energy.filled && !energy.file) {
+      err.textContent = 'Indiquez au moins une donnée (consommation, injection, prix…) ou joignez la dernière facture.';
+      return;
+    }
+    const submit = $('button[type=submit]', form);
+    submit.disabled = true;
+    try {
+      row.invoice_path = await uploadInvoice(form, energy.file);
+    } catch (ex) {
+      err.textContent = ex.message;
+      submit.disabled = false;
+      return;
+    }
     const { data: saved, error } = await sb.from('amb_contributions').insert(row).select().single();
+    submit.disabled = false;
     if (error) {
       err.textContent = 'L’envoi a échoué. Réessayez, ou écrivez-nous directement.';
       console.error(error);
@@ -318,10 +411,13 @@ function mountForm(lead) {
     lead.contributionCount = (lead.contributionCount || 0) + 1;
     renderPanel(lead);
     applyFilters();
+    const thanks = {
+      intro: 'Nous revenons vers vous pour préparer l’introduction.',
+      contact: 'Nous prenons contact et vous tenons au courant.',
+      data: 'Les données sont transmises à l’équipe RaYSun.',
+    }[v.mode];
     $('#form-slot').insertAdjacentHTML('afterbegin',
-      `<div class="success">Merci ! ${v.mode === 'intro'
-        ? 'Nous revenons vers vous pour préparer l’introduction.'
-        : 'Nous prenons contact et vous tenons au courant.'} Vous pouvez ajouter un autre contact ci-dessous.</div>`);
+      `<div class="success">Merci ! ${thanks} Vous pouvez ajouter autre chose ci-dessous.</div>`);
   });
   $('#form-slot').appendChild(form);
 }
@@ -369,6 +465,7 @@ function startSuggestion() {
 
   const form = $('#sugg-template').content.firstElementChild.cloneNode(true);
   form.id = 'place-form';
+  mountEnergy(form);
   const f = form.elements;
   $('#panel-body').innerHTML = '';
   $('#panel-body').appendChild(form);
@@ -388,6 +485,7 @@ function startSuggestion() {
     err.textContent = '';
     if (!state.draft) { err.textContent = 'Placez le lieu sur la carte (clic sur la carte ou bouton « Localiser »).'; return; }
     const hasContact = f.hasContact.value === 'yes';
+    const energy = readEnergy(form);
     const row = {
       place_name: f.placeName.value.trim(),
       address: f.address.value.trim() || null,
@@ -400,9 +498,24 @@ function startSuggestion() {
       contact_email: hasContact ? f.contactEmail.value.trim() || null : null,
       contact_phone: hasContact ? f.contactPhone.value.trim() || null : null,
       relation: hasContact ? f.relation.value.trim() || null : null,
+      building_type: f.buildingType.value || null,
+      region: f.region.value || null,
+      has_pv: f.hasPv.value || null,
+      pv_kwp: f.pvKwp.value === '' ? null : Number(f.pvKwp.value),
+      ...energy.cols,
     };
     if (hasContact && !row.contact_name) { err.textContent = 'Indiquez le nom de votre contact.'; return; }
+    const submit = $('button[type=submit]', form);
+    submit.disabled = true;
+    try {
+      row.invoice_path = await uploadInvoice(form, energy.file);
+    } catch (ex) {
+      err.textContent = ex.message;
+      submit.disabled = false;
+      return;
+    }
     const { data: saved, error } = await sb.from('amb_suggestions').insert(row).select().single();
+    submit.disabled = false;
     if (error) { console.error(error); err.textContent = 'L’envoi a échoué. Réessayez dans un instant.'; return; }
     cancelDraft();
     state.suggestions.push(saved);
@@ -547,15 +660,20 @@ $('#add-lead').addEventListener('click', () => startLeadForm());
 // --- Session -----------------------------------------------------------------
 
 async function loadData() {
-  const [leads, status, counts, mine, sugg, members] = await Promise.all([
+  const [leads, status, counts, mine, sugg, members, settings] = await Promise.all([
     sb.from('amb_leads').select('*'),
     sb.from('amb_lead_status').select('*'), // vide pour les ambassadeurs (règle RLS)
     sb.rpc('amb_lead_counts'),
     sb.from('amb_contributions').select('*').eq('author_id', state.user.id),
     sb.from('amb_suggestions').select('*').order('created_at'), // les siens, ou tous pour l'équipe (RLS)
     sb.rpc('amb_community_members'),
+    sb.from('amb_settings').select('key, value'),
   ]);
   for (const r of [leads, status, counts, mine, sugg, members]) if (r.error) throw r.error;
+  // Critères de ciblage : non bloquant si la table n'est pas lisible.
+  const target = settings.data?.find((x) => x.key === 'target')?.value?.trim();
+  $('#target-text').textContent = target || '';
+  $('#target-box').hidden = !target;
   const statusById = new Map(status.data.map((s) => [s.lead_id, s.status]));
   const countById = new Map(counts.data.map((c) => [c.lead_id, Number(c.n)]));
   state.leads = leads.data.map((l) => ({

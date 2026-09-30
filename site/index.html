@@ -41,13 +41,23 @@
           <label><input type="checkbox" data-wave="1" checked> Vague 1</label>
           <label><input type="checkbox" data-wave="2" checked> Vague 2</label>
           <label title="Producteurs photovoltaïques détectés (batch septembre 2026)"><input type="checkbox" data-wave="3" checked> Vague 3 · PV</label>
-          <span class="legend"><i class="dot prio-A"></i>A <i class="dot prio-B"></i>B <i class="dot prio-C"></i>C</span>
+        </div>
+        <div class="filters" title="A = à approcher en premier, B = ensuite, C = plus tard">
+          <span class="muted">Priorité</span>
+          <label><input type="checkbox" data-prio="A" checked> <i class="dot prio-A"></i>A</label>
+          <label><input type="checkbox" data-prio="B" checked> <i class="dot prio-B"></i>B</label>
+          <label><input type="checkbox" data-prio="C" checked> <i class="dot prio-C"></i>C</label>
         </div>
         <div class="filters">
           <label><input type="checkbox" id="show-members" autocomplete="off"> <i class="dot member"></i><span>Membres CityWatt (<span id="members-count">0</span>)</span></label>
           <label><input type="checkbox" id="show-suggestions" autocomplete="off"> <i class="dot sugg"></i><span>Lieux proposés</span></label>
           <label id="converted-filter" hidden><input type="checkbox" id="show-converted" autocomplete="off"> <span>Afficher les points convertis</span></label>
         </div>
+        <!-- Critères de ciblage : texte modifiable par l'équipe dans le suivi équipe (table amb_settings). -->
+        <details class="target" id="target-box" hidden>
+          <summary>🎯 Qui cibler en ce moment ?</summary>
+          <div id="target-text"></div>
+        </details>
       </div>
       <ul id="lead-list" class="lead-list"></ul>
     </aside>
@@ -81,9 +91,15 @@
           <strong>Je vous donne le contact</strong>
           <span>Vous nous transmettez ses coordonnées et nous l’approchons nous-mêmes.</span>
         </label>
+        <label class="path">
+          <input type="radio" name="mode" value="data">
+          <strong>J’ai des données sur ce bâtiment</strong>
+          <span>Consommation, injection, prix, dernière facture : sans forcément donner de contact.</span>
+        </label>
       </div>
       <div class="fields" hidden>
-        <label>Nom de votre contact * <input name="contactName" required></label>
+        <div class="contact-block">
+        <label>Nom de votre contact * <input name="contactName"></label>
         <div class="row">
           <label>Sa fonction <input name="contactFunction"></label>
           <label>Sa société <input name="contactCompany"></label>
@@ -110,11 +126,44 @@
           </label>
         </div>
         <label class="checkbox contact-only"><input type="checkbox" name="mentionName" checked> Vous pouvez dire que vous venez de ma part</label>
+        </div>
+        <div class="energy-slot"></div>
         <label>Remarques <textarea name="remarks" rows="3"></textarea></label>
         <p class="error"></p>
         <button type="submit" class="btn primary">Envoyer</button>
       </div>
     </form>
+  </template>
+
+  <!-- Données énergie : insérées dans le formulaire d'un immeuble et dans « Proposer un lieu ». -->
+  <template id="energy-template">
+    <fieldset class="energy">
+      <legend>Données énergie <span class="muted optional">(facultatif)</span></legend>
+      <div class="row">
+        <label>Consommation annuelle (MWh/an) <input name="consumptionMwh" type="number" min="0" step="any"></label>
+        <label>Injection annuelle (MWh/an) <input name="injectionMwh" type="number" min="0" step="any"></label>
+      </div>
+      <label>Fournisseur actuel <input name="supplier" placeholder="Engie, Luminus, TotalEnergies…"></label>
+      <div class="row">
+        <label>Formule de prélèvement
+          <select name="offtakeFormula"><option value="">—</option><option>Fixe</option><option>Variable</option><option>Indexé</option></select>
+        </label>
+        <label class="checkbox bihoraire"><input type="checkbox" name="offtakeBihoraire"> Bi-horaire (jour / nuit)</label>
+      </div>
+      <label>Détail du prix de prélèvement <input name="offtakeDetail" placeholder="Ex. 0,21 €/kWh · Belpex + 12 €/MWh · jour 0,24 / nuit 0,18"></label>
+      <div class="row">
+        <label>Formule d’injection
+          <select name="injectionFormula"><option value="">—</option><option>Fixe</option><option>Variable</option><option>Indexé</option></select>
+        </label>
+        <label>Détail du prix d’injection <input name="injectionDetail" placeholder="Ex. 0,04 €/kWh"></label>
+      </div>
+      <p class="notice">📄 <strong>Dernière facture d’électricité :</strong> elle ne peut pas dater de plus de 3 mois.
+        Si vous ne remplissez pas les champs ci-dessus (consommation, injection, formules de prix…), ces informations doivent figurer sur la facture.</p>
+      <label>Dernière facture <span class="muted">(PDF ou photo, 10 Mo max.)</span>
+        <input name="invoice" type="file" accept="application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif"></label>
+      <label class="checkbox invoice-confirm" hidden><input type="checkbox" name="invoiceRecent"> Je confirme que cette facture date de moins de 3 mois</label>
+      <p class="muted small">🔒 La facture n’est visible que par l’équipe RaYSun et elle est supprimée automatiquement après 10 jours.</p>
+    </fieldset>
   </template>
 
   <template id="sugg-template">
@@ -126,6 +175,24 @@
       <button type="button" class="btn secondary locate">Localiser sur la carte</button>
       <p class="where muted small">Ou cliquez directement sur la carte.</p>
       <label>Pourquoi ce lieu ? <textarea name="reason" rows="3" placeholder="Grande toiture, consommation importante, projet en cours…"></textarea></label>
+      <div class="row">
+        <label>Type de bâtiment
+          <select name="buildingType">
+            <option value="">—</option><option>Professionnel</option><option>Copropriété</option>
+            <option>Logement social</option><option>Bâtiment public</option><option>Autre</option>
+          </select>
+        </label>
+        <label>Région
+          <select name="region"><option>Bruxelles</option><option>Wallonie</option><option>Flandre</option></select>
+        </label>
+      </div>
+      <div class="row">
+        <label>Panneaux solaires sur place ?
+          <select name="hasPv"><option value="">—</option><option>Oui</option><option>Non</option><option>Je ne sais pas</option></select>
+        </label>
+        <label>Puissance (kWc) <input name="pvKwp" type="number" min="0" step="any"></label>
+      </div>
+      <p class="muted small">Maisons individuelles non acceptées. Voir « 🎯 Qui cibler en ce moment ? » dans la colonne de gauche.</p>
       <div class="paths">
         <label class="path">
           <input type="radio" name="hasContact" value="yes" required>
@@ -147,6 +214,7 @@
         </div>
         <label>Comment le connaissez-vous ? <input name="relation"></label>
       </div>
+      <div class="energy-slot"></div>
       <p class="error"></p>
       <button type="submit" class="btn primary">Envoyer le lieu</button>
     </form>

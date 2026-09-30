@@ -20,7 +20,11 @@
     .stats { display: flex; gap: 10px; flex-wrap: wrap; }
     .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; }
     .stat b { display: block; font-size: 22px; }
-    .member-form { display: grid; grid-template-columns: 2fr 2fr 1fr 2fr auto; gap: 8px; align-items: end; margin-bottom: 10px; }
+    .member-form { display: grid; grid-template-columns: 2fr 2fr 1fr 1.5fr 2fr auto; gap: 8px; align-items: end; margin-bottom: 10px; }
+    .target-editor { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+    .target-editor textarea { width: 100%; font: inherit; font-size: 14px; }
+    .target-editor .btn { width: auto; margin-top: 8px; }
+    td input.org { min-width: 120px; }
     .pw { display: flex; gap: 6px; }
     .pw input { flex: 1; }
     .pw .btn { padding: 8px 10px; }
@@ -52,6 +56,14 @@
   <div class="wrap" id="content" hidden>
     <div class="stats" id="stats"></div>
 
+    <div class="toolbar"><h2>🎯 Qui cibler en ce moment ?</h2></div>
+    <div class="target-editor">
+      <p class="muted small" style="margin-top:0">Ce texte s’affiche sur la carte pour tous les actionnaires et ambassadeurs. Modifiez-le ici : c’est visible immédiatement, sans redéploiement.</p>
+      <textarea id="target" rows="9"></textarea>
+      <button class="btn primary" id="save-target">Enregistrer</button>
+      <span class="muted small" id="target-info"></span>
+    </div>
+
     <div id="requests-block" hidden>
       <div class="toolbar"><h2>Demandes d’accès à valider</h2></div>
       <div class="table-wrap">
@@ -72,7 +84,7 @@
         <thead>
           <tr>
             <th>Date</th><th>Immeuble</th><th>Proposé par</th><th>Contact</th><th>Chemin</th>
-            <th>Lien</th><th>Quand / remarques</th><th>Suivi</th><th>Notes équipe</th><th></th>
+            <th>Lien</th><th>Quand / remarques</th><th>Données énergie</th><th>Suivi</th><th>Notes équipe</th><th></th>
           </tr>
         </thead>
         <tbody id="rows"></tbody>
@@ -82,7 +94,7 @@
     <div class="toolbar"><h2>Lieux proposés par les ambassadeurs</h2></div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Date</th><th>Lieu</th><th>Proposé par</th><th>Pourquoi</th><th>Contact sur place</th><th>Suivi</th><th>Notes équipe</th><th></th></tr></thead>
+        <thead><tr><th>Date</th><th>Lieu</th><th>Proposé par</th><th>Pourquoi</th><th>Critères</th><th>Contact sur place</th><th>Données énergie</th><th>Priorité</th><th>Suivi</th><th>Notes équipe</th><th></th></tr></thead>
         <tbody id="suggestions"></tbody>
       </table>
     </div>
@@ -102,6 +114,7 @@
           <option value="admin">Équipe</option>
         </select>
       </label>
+      <label>Organisation <input name="organisation" placeholder="Ex. Trinergy"></label>
       <label>Mot de passe <span class="muted">(optionnel)</span>
         <span class="pw"><input name="password" type="text" autocomplete="off" minlength="8" placeholder="8 caractères minimum">
         <button type="button" class="btn secondary" id="gen-password">Générer</button></span>
@@ -112,7 +125,7 @@
     <div class="credentials" id="credentials" hidden></div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Nom</th><th>Email</th><th>Rôle</th><th>Statut</th><th></th></tr></thead>
+        <thead><tr><th>Nom</th><th>Email</th><th>Organisation</th><th>Rôle</th><th>Statut</th><th></th></tr></thead>
         <tbody id="members"></tbody>
       </table>
     </div>
@@ -126,6 +139,45 @@
     const ROLES = { shareholder: 'Actionnaire', ambassador: 'Ambassadeur', admin: 'Équipe' };
     const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     let rows = [];
+    const MODES = { intro: 'Introduction', contact: 'Contact transmis', data: 'Données du bâtiment' };
+
+    // Données énergie + facture (contacts et lieux proposés). La facture s'ouvre via un lien de 2 minutes.
+    function energyHtml(r) {
+      const formula = (f, d, bi) => [f, bi ? 'bi-horaire' : null, d].filter(Boolean).join(' · ');
+      const lines = [
+        r.consumption_mwh != null ? `Conso : ${r.consumption_mwh} MWh/an` : null,
+        r.injection_mwh != null ? `Injection : ${r.injection_mwh} MWh/an` : null,
+        r.supplier ? `Fournisseur : ${r.supplier}` : null,
+        formula(r.offtake_formula, r.offtake_detail, r.offtake_bihoraire) ? `Prélèvement : ${formula(r.offtake_formula, r.offtake_detail, r.offtake_bihoraire)}` : null,
+        formula(r.injection_formula, r.injection_detail) ? `Injection (prix) : ${formula(r.injection_formula, r.injection_detail)}` : null,
+      ].filter(Boolean).map((l) => `<small>${esc(l)}</small>`).join('');
+      const invoice = r.invoice_path
+        ? `<button class="link" data-invoice="${esc(r.invoice_path)}">📄 Voir la facture</button>`
+        : r.invoice_uploaded_at ? '<small>Facture supprimée (10 jours)</small>' : '';
+      return lines + invoice || '<span class="muted">—</span>';
+    }
+
+    document.addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-invoice]');
+      if (!btn) return;
+      const win = window.open('', '_blank');
+      const { data, error } = await sb.storage.from('amb-invoices').createSignedUrl(btn.dataset.invoice, 120);
+      if (error) { win?.close(); alert('Facture introuvable (elle est supprimée après 10 jours).'); return; }
+      if (win) win.location = data.signedUrl; else location.href = data.signedUrl;
+    });
+
+    async function loadTarget() {
+      const { data, error } = await sb.from('amb_settings').select('value, updated_at').eq('key', 'target').maybeSingle();
+      if (error) throw error;
+      document.getElementById('target').value = data?.value || '';
+      document.getElementById('target-info').textContent = data ? `Dernière modification : ${new Date(data.updated_at).toLocaleString('fr-BE')}` : '';
+    }
+
+    document.getElementById('save-target').addEventListener('click', async () => {
+      const value = document.getElementById('target').value.trim();
+      const { error } = await sb.from('amb_settings').upsert({ key: 'target', value, updated_at: new Date().toISOString() });
+      document.getElementById('target-info').textContent = error ? 'Enregistrement impossible.' : 'Enregistré ✓ — visible sur la carte au prochain chargement.';
+    });
 
     async function loadContributions() {
       const { data, error } = await sb.from('amb_contributions')
@@ -139,6 +191,7 @@
         [new Set(rows.map((c) => c.lead_id)).size, 'immeubles couverts'],
         [people.size, 'ambassadeurs actifs'],
         [rows.filter((c) => c.follow_up === 'Rendez-vous obtenu').length, 'rendez-vous obtenus'],
+        [rows.filter((c) => c.mode === 'data' || c.invoice_path || c.consumption_mwh != null).length, 'données transmises'],
       ].map(([n, l]) => `<div class="stat"><b>${n}</b>${l}</div>`).join('');
 
       document.getElementById('rows').innerHTML = rows.map((c) => `
@@ -146,18 +199,19 @@
           <td>${esc(c.created_at.slice(0, 10))}</td>
           <td><a href="./#${esc(c.lead_id)}">${esc(c.amb_leads?.name)}</a></td>
           <td>${esc(c.author_name)}</td>
-          <td><strong>${esc(c.contact_name)}</strong>
+          <td><strong>${esc(c.contact_name || '—')}</strong>
             <small>${esc([c.contact_function, c.contact_company].filter(Boolean).join(' · '))}</small>
             <small>${esc([c.contact_email, c.contact_phone].filter(Boolean).join(' · '))}</small></td>
-          <td>${c.mode === 'intro' ? 'Introduction' : 'Contact transmis'}${c.mode === 'contact' ? `<small>${c.mention_name ? 'Peut être cité' : 'Ne pas citer'}</small>` : ''}</td>
+          <td>${MODES[c.mode] || esc(c.mode)}${c.mode === 'contact' ? `<small>${c.mention_name ? 'Peut être cité' : 'Ne pas citer'}</small>` : ''}</td>
           <td>${esc(c.strength)}<small>${esc(c.relation)}</small></td>
           <td>${esc(c.when_text)}<small>${esc(c.remarks)}</small></td>
+          <td>${energyHtml(c)}</td>
           <td><select data-id="${esc(c.id)}" data-field="follow_up">
             ${FOLLOW_UP.map((o) => `<option${o === c.follow_up ? ' selected' : ''}>${esc(o)}</option>`).join('')}
           </select></td>
           <td><textarea rows="2" data-id="${esc(c.id)}" data-field="team_notes">${esc(c.team_notes)}</textarea></td>
           <td><button class="link danger" data-delete="amb_contributions" data-id="${esc(c.id)}" title="Supprimer ce contact">Supprimer</button></td>
-        </tr>`).join('') || '<tr><td colspan="10" class="muted">Aucun contact pour l’instant.</td></tr>';
+        </tr>`).join('') || '<tr><td colspan="11" class="muted">Aucun contact pour l’instant.</td></tr>';
 
       document.querySelectorAll('#rows [data-field]').forEach((el) => el.addEventListener('change', async () => {
         const { error } = await sb.from('amb_contributions').update({ [el.dataset.field]: el.value }).eq('id', el.dataset.id);
@@ -175,7 +229,9 @@
       if (error) throw error;
       members = data;
       document.getElementById('members').innerHTML = data.map((m, i) => `
-        <tr><td>${esc(m.name)}</td><td>${esc(m.email)}</td><td>${esc(ROLES[m.role])}</td>
+        <tr><td>${esc(m.name)}</td><td>${esc(m.email)}</td>
+          <td><input class="org" data-org="${i}" value="${esc(m.organisation)}" placeholder="—"></td>
+          <td>${esc(ROLES[m.role])}</td>
           <td>${m.pending ? 'Invité, pas encore connecté' : 'Actif'}</td>
           <td style="white-space:nowrap">
             <button class="link" data-reset="${i}" title="Créer un nouveau mot de passe à lui transmettre">Nouveau mot de passe</button>
@@ -218,6 +274,17 @@
       return true;
     }
 
+    async function setOrganisation(email, organisation) {
+      const { error } = await sb.rpc('amb_set_member_org', { p_email: email, p_org: organisation || '' });
+      document.getElementById('member-error').textContent = error ? 'Organisation non enregistrée.' : '';
+      return !error;
+    }
+
+    document.getElementById('members').addEventListener('change', (e) => {
+      const input = e.target.closest('[data-org]');
+      if (input) setOrganisation(members[input.dataset.org].email, input.value);
+    });
+
     document.getElementById('members').addEventListener('click', async (e) => {
       const reset = e.target.closest('[data-reset]');
       const remove = e.target.closest('[data-remove]');
@@ -251,22 +318,34 @@
         // Sans mot de passe : invitation, la personne se connectera par lien email.
         const { error } = await sb.rpc('amb_upsert_member', { p_email: f.email, p_role: f.role, p_name: f.name });
         errEl.textContent = error ? error.message : '';
-        if (!error) { e.target.reset(); loadMembers(); }
+        if (!error) {
+          if (f.organisation) await setOrganisation(f.email, f.organisation);
+          e.target.reset();
+          loadMembers();
+        }
         return;
       }
       // Avec mot de passe : compte créé (ou mot de passe changé) côté serveur, identifiants à transmettre.
-      if (await setPassword({ email: f.email, name: f.name, role: f.role, password: f.password })) e.target.reset();
+      if (await setPassword({ email: f.email, name: f.name, role: f.role, password: f.password })) {
+        if (f.organisation) { await setOrganisation(f.email, f.organisation); await loadMembers(); }
+        e.target.reset();
+      }
     });
 
     // CSV au format de l'onglet « Vos contacts » ; « ; » et BOM pour qu'Excel (réglages belges) l'ouvre correctement.
     document.getElementById('export').addEventListener('click', () => {
       const header = ['Date', 'Actionnaire / ambassadeur', 'Immeuble / société concernée', 'Votre contact (nom)', 'Sa fonction',
         'Société du contact', 'Email du contact', 'Téléphone du contact', 'Comment vous le connaissez', 'Qualité du lien',
-        'Ce que vous acceptez de faire', 'Peut-on citer votre nom ?', 'Quand', 'Remarques', 'Suivi', 'Notes équipe'];
+        'Ce que vous acceptez de faire', 'Peut-on citer votre nom ?', 'Quand', 'Remarques',
+        'Consommation (MWh/an)', 'Injection (MWh/an)', 'Fournisseur', 'Formule de prélèvement', 'Bi-horaire',
+        'Détail prélèvement', 'Formule d’injection', 'Détail injection', 'Facture jointe', 'Suivi', 'Notes équipe'];
       const lines = rows.map((c) => [c.created_at.slice(0, 10), c.author_name, c.amb_leads?.name, c.contact_name,
         c.contact_function, c.contact_company, c.contact_email, c.contact_phone, c.relation, c.strength,
-        c.mode === 'intro' ? 'Je fais l’introduction' : 'Je vous donne le contact', c.mention_name ? 'Oui' : 'Non',
-        c.when_text, c.remarks, c.follow_up, c.team_notes]);
+        { intro: 'Je fais l’introduction', contact: 'Je vous donne le contact', data: 'J’ai des données sur ce bâtiment' }[c.mode],
+        c.mention_name ? 'Oui' : 'Non', c.when_text, c.remarks,
+        c.consumption_mwh, c.injection_mwh, c.supplier, c.offtake_formula, c.offtake_bihoraire ? 'Oui' : '',
+        c.offtake_detail, c.injection_formula, c.injection_detail, c.invoice_uploaded_at ? 'Oui' : '',
+        c.follow_up, c.team_notes]);
       const csv = [header, ...lines]
         .map((l) => l.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(';')).join('\r\n');
       const a = document.createElement('a');
@@ -316,18 +395,24 @@
           <td><a href="./#lieu-${esc(s.id)}">${esc(s.place_name)}</a><small>${esc(s.address)}</small></td>
           <td>${esc(s.author_name)}</td>
           <td>${esc(s.reason)}</td>
+          <td>${[s.building_type, s.region, s.has_pv ? `PV : ${s.has_pv}${s.pv_kwp != null ? ` (${s.pv_kwp} kWc)` : ''}` : null]
+            .filter(Boolean).map((x) => `<small>${esc(x)}</small>`).join('') || '<span class="muted">—</span>'}</td>
           <td>${s.has_contact ? `<strong>${esc(s.contact_name)}</strong>
             <small>${esc(s.contact_function)}</small>
             <small>${esc([s.contact_email, s.contact_phone].filter(Boolean).join(' · '))}</small>
             <small>${esc(s.relation)}</small>` : '<span class="muted">Pas de contact</span>'}</td>
+          <td>${energyHtml(s)}</td>
+          <td><select data-sugg="${esc(s.id)}" data-sfield="priority">
+            ${['', 'A', 'B', 'C'].map((o) => `<option value="${o}"${o === (s.priority || '') ? ' selected' : ''}>${o || '—'}</option>`).join('')}
+          </select></td>
           <td><select data-sugg="${esc(s.id)}" data-sfield="follow_up">
             ${SUGG_FOLLOW_UP.map((o) => `<option${o === s.follow_up ? ' selected' : ''}>${esc(o)}</option>`).join('')}
           </select></td>
           <td><textarea rows="2" data-sugg="${esc(s.id)}" data-sfield="team_notes">${esc(s.team_notes)}</textarea></td>
           <td><button class="link danger" data-delete="amb_suggestions" data-id="${esc(s.id)}" title="Supprimer ce lieu">Supprimer</button></td>
-        </tr>`).join('') || '<tr><td colspan="8" class="muted">Aucun lieu proposé pour l’instant.</td></tr>';
+        </tr>`).join('') || '<tr><td colspan="11" class="muted">Aucun lieu proposé pour l’instant.</td></tr>';
       document.querySelectorAll('[data-sfield]').forEach((el) => el.addEventListener('change', async () => {
-        const { error } = await sb.from('amb_suggestions').update({ [el.dataset.sfield]: el.value }).eq('id', el.dataset.sugg);
+        const { error } = await sb.from('amb_suggestions').update({ [el.dataset.sfield]: el.value || null }).eq('id', el.dataset.sugg);
         document.getElementById('error').textContent = error ? 'Modification non enregistrée.' : '';
       }));
     }
@@ -352,7 +437,7 @@
       myEmail = (who.user.email || '').toLowerCase();
       document.getElementById('login').hidden = true;
       document.getElementById('content').hidden = false;
-      await Promise.all([loadContributions(), loadMembers(), loadRequests(), loadSuggestions()]);
+      await Promise.all([loadContributions(), loadMembers(), loadRequests(), loadSuggestions(), loadTarget()]);
     }
 
     wireLoginForm(start);
