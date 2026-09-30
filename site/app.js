@@ -23,7 +23,7 @@ function fmt(n) {
 // --- Marqueurs ------------------------------------------------------------------
 
 function leadHtml(lead, selected) {
-  return `<div class="pin prio-${esc(lead.priority)}${selected ? ' selected' : ''}${lead.convertedAt ? ' converted' : ''}">${lead.wave === 1 ? '1' : '2'}</div>`
+  return `<div class="pin prio-${esc(lead.priority)}${selected ? ' selected' : ''}${lead.convertedAt ? ' converted' : ''}">${esc(lead.wave)}</div>`
     + `<span class="mk-label ${labelSide(lead)}">${esc(shortName(lead))}</span>`;
 }
 
