@@ -124,6 +124,9 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .panel-head h2 { margin-top: 8px; font-size: 20px; padding-right: 20px; }
 .tag { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 10px; background: var(--border); }
 .tag.prio-A, .tag.prio-B, .tag.prio-C, .tag.sugg { color: #fff; }
+.tag.prio-A { background: var(--prio-A); }
+.tag.prio-B { background: var(--prio-B); }
+.tag.prio-C { background: var(--prio-C); }
 .tag.sugg { background: var(--sugg); }
 .pitch { background: var(--accent-soft); padding: 10px 12px; border-radius: 8px; }
 dl { margin: 12px 0; }
