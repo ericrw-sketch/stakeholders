@@ -32,6 +32,7 @@
     .credentials pre { white-space: pre-wrap; font: 13px/1.5 ui-monospace, Menlo, monospace; background: #fff; border-radius: 6px; padding: 10px; margin: 8px 0; }
     .member-form label { font-size: 13px; }
     .member-form .btn { width: auto; }
+    .member-form .send-email { grid-column: 1 / -1; margin: 0; }
     @media (max-width: 760px) { .member-form { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -120,6 +121,8 @@
         <button type="button" class="btn secondary" id="gen-password">Générer</button></span>
       </label>
       <button class="btn primary" type="submit">Ajouter</button>
+      <label class="checkbox send-email"><input type="checkbox" name="sendEmail" id="send-email" checked>
+        Envoyer les accès par email à la personne (Brevo, depuis eric.rw@raysun.solar) — aussi pour « Nouveau mot de passe »</label>
     </form>
     <p class="error" id="member-error"></p>
     <div class="credentials" id="credentials" hidden></div>
@@ -246,12 +249,14 @@
     }
 
     // Crée le compte (ou change son mot de passe) côté serveur, puis affiche le message à transmettre.
-    async function setPassword({ email, name, role, password }) {
+    async function setPassword({ email, name, role, password, organisation }) {
       const errEl = document.getElementById('member-error');
       const box = document.getElementById('credentials');
       errEl.textContent = '';
       box.hidden = true;
-      const { data, error } = await sb.functions.invoke('amb-admin-user', { body: { email, name, role, password } });
+      const sendEmail = document.getElementById('send-email').checked;
+      const { data, error } = await sb.functions.invoke('amb-admin-user',
+        { body: { email, name, role, password, organisation, send_email: sendEmail } });
       if (error || !data?.ok) {
         let msg = data?.error;
         try { msg = msg || (await error.context.json()).error; } catch {}
@@ -260,8 +265,10 @@
       }
       const site = location.origin + location.pathname.replace(/admin\.html$/, '');
       const message = `Bonjour ${name},\n\nVoici votre accès à l’espace ambassadeurs CityWatt :\n${site}\n\nEmail : ${data.email}\nMot de passe : ${password}\n\nÀ bientôt,\nEric`;
-      box.innerHTML = `<strong>${data.existing ? 'Nouveau mot de passe' : 'Compte créé'} pour ${esc(data.email)}.</strong>
-        Transmettez-lui ce message (par email, WhatsApp…) :
+      const sent = data.emailed
+        ? ' <b>Les accès lui ont été envoyés par email.</b> Pensez à lui dire de vérifier ses spams. Message de secours :'
+        : `${data.email_error ? ` <b>L’email n’a pas pu partir</b> (${esc(data.email_error)}).` : ''} Transmettez-lui ce message (par email, WhatsApp…) :`;
+      box.innerHTML = `<strong>${data.existing ? 'Nouveau mot de passe' : 'Compte créé'} pour ${esc(data.email)}.</strong>${sent}
         <pre id="credentials-text">${esc(message)}</pre>
         <button type="button" class="btn secondary" id="copy-credentials">Copier le message</button>`;
       box.hidden = false;
@@ -326,9 +333,9 @@
         return;
       }
       // Avec mot de passe : compte créé (ou mot de passe changé) côté serveur, identifiants à transmettre.
-      if (await setPassword({ email: f.email, name: f.name, role: f.role, password: f.password })) {
-        if (f.organisation) { await setOrganisation(f.email, f.organisation); await loadMembers(); }
+      if (await setPassword({ email: f.email, name: f.name, role: f.role, password: f.password, organisation: f.organisation })) {
         e.target.reset();
+        document.getElementById('send-email').checked = true;
       }
     });
 

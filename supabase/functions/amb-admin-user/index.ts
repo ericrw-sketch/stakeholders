@@ -1,6 +1,7 @@
 // Crée (ou met à jour) un compte avec mot de passe, pour que l'équipe transmette elle-même
 // les identifiants à un actionnaire ou un ambassadeur, sans passer par un email de connexion.
 // Réservé à l'équipe : la fonction vérifie le rôle de l'appelant avec son propre jeton de session.
+// Option send_email : envoie les accès à la personne via Brevo (secret BREVO_API_KEY, clé API v3).
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const URL = Deno.env.get('SUPABASE_URL')!;
@@ -18,6 +19,54 @@ const reply = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
 const ROLES = ['shareholder', 'ambassador', 'admin'];
+const SITE = 'https://citywatt-ambassadeurs.netlify.app/';
+const SENDER = { name: 'Eric Rwamucyo — CityWatt', email: 'eric.rw@raysun.solar' };
+
+const esc = (s: string) => s.replace(/[&<>"']/g, (c) =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+
+// Email aux couleurs CityWatt (même mise en page que les emails de connexion Supabase).
+function credentialsHtml(name: string, email: string, password: string, existing: boolean) {
+  const row = (k: string, v: string) =>
+    `<tr><td style="padding:6px 0;color:#6b7378;width:120px;">${k}</td><td style="padding:6px 0;font-weight:bold;font-family:Menlo,Consolas,monospace;">${esc(v)}</td></tr>`;
+  return `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#f4f5f2;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f5f2;"><tr><td align="center" style="padding:32px 16px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:14px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;color:#1d2327;">
+<tr><td style="background:#0b7a5c;padding:22px 32px;"><span style="font-size:22px;font-weight:bold;color:#ffffff;">CityWatt</span><span style="font-size:22px;color:#b8e6d6;"> Ambassadeurs</span></td></tr>
+<tr><td style="padding:32px 32px 8px 32px;font-size:16px;line-height:1.55;">
+<p style="margin:0 0 16px 0;font-size:20px;font-weight:bold;">${existing ? 'Votre nouveau mot de passe' : 'Votre accès à la carte CityWatt'}</p>
+<p style="margin:0;">Bonjour ${esc(name)},</p>
+<p style="margin:12px 0 0 0;">${existing
+    ? 'Voici votre nouveau mot de passe pour l’espace ambassadeurs CityWatt. L’ancien ne fonctionne plus.'
+    : 'Votre accès à l’espace ambassadeurs CityWatt est prêt : la carte des bâtiments que nous cherchons à faire entrer dans la communauté d’énergie. Vous pouvez y proposer une introduction, un contact, des données de consommation ou un nouveau lieu.'}</p>
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin:18px 0 0 0;background:#e5f4ef;border-radius:8px;padding:10px 16px;width:100%;">
+${row('Adresse', SITE)}${row('Email', email)}${row('Mot de passe', password)}</table>
+</td></tr>
+<tr><td align="center" style="padding:20px 32px 24px 32px;"><a href="${SITE}" style="display:inline-block;background:#0b7a5c;color:#ffffff;text-decoration:none;font-size:16px;font-weight:bold;padding:14px 32px;border-radius:8px;">Ouvrir la carte CityWatt</a></td></tr>
+<tr><td style="padding:0 32px 28px 32px;font-size:14px;line-height:1.5;color:#6b7378;">
+<p style="margin:0 0 12px 0;">Ces identifiants sont personnels : ne les transférez pas. Mot de passe oublié ? Écrivez-nous, nous vous en créons un nouveau.</p>
+<p style="margin:0;">Pensez à ajouter eric.rw@raysun.solar à vos contacts pour que nos messages n’arrivent pas dans les spams.</p>
+</td></tr>
+<tr><td style="background:#e5f4ef;padding:18px 32px;font-size:13px;line-height:1.5;color:#3d4a45;"><strong>CityWatt</strong> — l’énergie solaire produite à Bruxelles, partagée entre voisins.<br>Une question ? Eric Rwamucyo · <a href="mailto:eric.rw@raysun.solar" style="color:#0b7a5c;">eric.rw@raysun.solar</a> · +32 484 07 28 29</td></tr>
+</table></td></tr></table></body></html>`;
+}
+
+async function sendCredentials(name: string, email: string, password: string, existing: boolean) {
+  const key = Deno.env.get('BREVO_API_KEY');
+  if (!key) return 'Secret BREVO_API_KEY manquant dans Supabase';
+  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: { 'api-key': key, 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({
+      sender: SENDER, to: [{ email, name }], replyTo: SENDER,
+      subject: existing ? 'CityWatt — votre nouveau mot de passe' : 'CityWatt — votre accès à la carte des bâtiments',
+      htmlContent: credentialsHtml(name, email, password, existing),
+    }),
+  }).catch((e) => ({ ok: false, text: async () => String(e) }) as Response);
+  if (!res.ok) return `Brevo : ${await res.text()}`;
+  return null;
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: CORS });
@@ -51,11 +100,18 @@ Deno.serve(async (req) => {
     if (updated.error) return reply(500, { error: updated.error.message });
   }
 
-  // 4. Donne l'accès avec le rôle choisi.
-  const { error: memberError } = await admin.from('amb_members')
-    .upsert({ user_id: userId, role: body.role, name }, { onConflict: 'user_id' });
+  // 4. Donne l'accès avec le rôle choisi (et l'organisation si elle est indiquée).
+  const member: Record<string, unknown> = { user_id: userId, role: body.role, name };
+  const organisation = String(body.organisation ?? '').trim();
+  if (organisation) member.organisation = organisation;
+  const { error: memberError } = await admin.from('amb_members').upsert(member, { onConflict: 'user_id' });
   if (memberError) return reply(500, { error: memberError.message });
   await admin.from('amb_invites').delete().eq('email', email);
 
-  return reply(200, { ok: true, email, existing: !created.data?.user });
+  // 5. Envoi des accès par email (Brevo), si demandé. Un échec n'annule pas la création du compte.
+  const existing = !created.data?.user;
+  const emailError = body.send_email ? await sendCredentials(name, email, password, existing) : null;
+  if (emailError) console.error(emailError);
+
+  return reply(200, { ok: true, email, existing, emailed: !!body.send_email && !emailError, email_error: emailError });
 });
