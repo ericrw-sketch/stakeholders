@@ -27,8 +27,11 @@ function leadHtml(lead, selected) {
     + `<span class="mk-label ${labelSide(lead)}">${esc(shortName(lead))}</span>`;
 }
 
+// Lieu converti ou traité : retiré de la carte (visible par l'équipe avec « Afficher les convertis »).
+const isClosed = (s) => s.follow_up === 'Converti' || s.follow_up === 'Traité';
+
 function suggHtml(s, selected) {
-  return `<div class="pin sugg${selected ? ' selected' : ''}${s.follow_up === 'Converti' ? ' converted' : ''}">+</div><span class="mk-label right">${esc(s.place_name)}</span>`;
+  return `<div class="pin sugg${selected ? ' selected' : ''}${isClosed(s) ? ' converted' : ''}">+</div><span class="mk-label right">${esc(s.place_name)}</span>`;
 }
 
 // Quand deux immeubles sont très proches, l'étiquette du plus à l'ouest passe à gauche.
@@ -103,7 +106,7 @@ function applyFilters() {
   }
   state.memberMarkers.forEach((m) => (showMembers ? m.show() : m.hide()));
   const visibleSugg = state.suggestions.filter((s) => showSugg
-    && (s.follow_up !== 'Converti' || showConverted())
+    && (!isClosed(s) || showConverted())
     && (!q || s.place_name.toLowerCase().includes(q)));
   state.suggestions.forEach((s) => {
     const m = state.suggMarkers.get(s.id);

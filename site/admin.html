@@ -11,6 +11,7 @@
     .toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 20px 0 12px; }
     .toolbar h2 { margin: 0; font-size: 18px; flex: 1; }
     .toolbar .btn.primary { width: auto; }
+    .toolbar .show-done { font-size: 14px; color: #555; display: flex; gap: 6px; align-items: center; }
     .table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
     table { border-collapse: collapse; width: 100%; font-size: 14px; }
     th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
@@ -77,6 +78,7 @@
 
     <div class="toolbar">
       <h2>Contacts proposés</h2>
+      <label class="show-done"><input type="checkbox" id="show-done"> Afficher les traités (<span id="done-count">0</span>)</label>
       <button class="btn primary" id="export">Exporter pour Excel (CSV)</button>
     </div>
     <p class="error" id="error"></p>
@@ -92,7 +94,8 @@
       </table>
     </div>
 
-    <div class="toolbar"><h2>Lieux proposés par les ambassadeurs</h2></div>
+    <div class="toolbar"><h2>Lieux proposés par les ambassadeurs</h2>
+      <label class="show-done"><input type="checkbox" id="show-done-sugg"> Afficher les traités (<span id="done-count-sugg">0</span>)</label></div>
     <div class="table-wrap">
       <table>
         <thead><tr><th>Date</th><th>Lieu</th><th>Proposé par</th><th>Pourquoi</th><th>Critères</th><th>Contact sur place</th><th>Données énergie</th><th>Priorité</th><th>Suivi</th><th>Notes équipe</th><th></th></tr></thead>
@@ -138,7 +141,9 @@
   <script src="config.js"></script>
   <script src="auth.js"></script>
   <script>
-    const FOLLOW_UP = ['Nouveau', 'En cours', 'Rendez-vous obtenu', 'Sans suite'];
+    const FOLLOW_UP = ['Nouveau', 'En cours', 'Rendez-vous obtenu', 'Sans suite', 'Traité'];
+    // « Traité » : masqué des tableaux (sauf case cochée) et de la carte ; compte dans le suivi commercial.
+    const DONE = 'Traité';
     const ROLES = { shareholder: 'Actionnaire', ambassador: 'Ambassadeur', admin: 'Équipe' };
     const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     let rows = [];
@@ -197,7 +202,15 @@
         [rows.filter((c) => c.mode === 'data' || c.invoice_path || c.consumption_mwh != null).length, 'données transmises'],
       ].map(([n, l]) => `<div class="stat"><b>${n}</b>${l}</div>`).join('');
 
-      document.getElementById('rows').innerHTML = rows.map((c) => `
+      renderContributions();
+    }
+
+    function renderContributions() {
+      const done = rows.filter((c) => c.follow_up === DONE).length;
+      document.getElementById('done-count').textContent = done;
+      const showDone = document.getElementById('show-done').checked;
+      const visible = rows.filter((c) => showDone || c.follow_up !== DONE);
+      document.getElementById('rows').innerHTML = visible.map((c) => `
         <tr>
           <td>${esc(c.created_at.slice(0, 10))}</td>
           <td><a href="./#${esc(c.lead_id)}">${esc(c.amb_leads?.name)}</a></td>
@@ -214,13 +227,14 @@
           </select></td>
           <td><textarea rows="2" data-id="${esc(c.id)}" data-field="team_notes">${esc(c.team_notes)}</textarea></td>
           <td><button class="link danger" data-delete="amb_contributions" data-id="${esc(c.id)}" title="Supprimer ce contact">Supprimer</button></td>
-        </tr>`).join('') || '<tr><td colspan="11" class="muted">Aucun contact pour l’instant.</td></tr>';
+        </tr>`).join('') || `<tr><td colspan="11" class="muted">${done ? 'Tous les contacts sont traités.' : 'Aucun contact pour l’instant.'}</td></tr>`;
 
       document.querySelectorAll('#rows [data-field]').forEach((el) => el.addEventListener('change', async () => {
         const { error } = await sb.from('amb_contributions').update({ [el.dataset.field]: el.value }).eq('id', el.dataset.id);
         document.getElementById('error').textContent = error ? 'Modification non enregistrée.' : '';
         const row = rows.find((r) => r.id === el.dataset.id);
         if (!error && row) row[el.dataset.field] = el.value;
+        if (!error && el.dataset.field === 'follow_up') renderContributions();
       }));
     }
 
@@ -392,11 +406,21 @@
       }));
     }
 
-    const SUGG_FOLLOW_UP = ['Nouveau', 'À étudier', 'Retenu', 'Converti', 'Écarté'];
+    const SUGG_FOLLOW_UP = ['Nouveau', 'À étudier', 'Retenu', 'Converti', 'Écarté', DONE];
+    let suggestions = [];
     async function loadSuggestions() {
       const { data, error } = await sb.from('amb_suggestions').select('*').order('created_at', { ascending: false });
       if (error) throw error;
-      document.getElementById('suggestions').innerHTML = data.map((s) => `
+      suggestions = data;
+      renderSuggestions();
+    }
+
+    function renderSuggestions() {
+      const done = suggestions.filter((s) => s.follow_up === DONE).length;
+      document.getElementById('done-count-sugg').textContent = done;
+      const showDone = document.getElementById('show-done-sugg').checked;
+      const visible = suggestions.filter((s) => showDone || s.follow_up !== DONE);
+      document.getElementById('suggestions').innerHTML = visible.map((s) => `
         <tr>
           <td>${esc(s.created_at.slice(0, 10))}</td>
           <td><a href="./#lieu-${esc(s.id)}">${esc(s.place_name)}</a><small>${esc(s.address)}</small></td>
@@ -417,12 +441,17 @@
           </select></td>
           <td><textarea rows="2" data-sugg="${esc(s.id)}" data-sfield="team_notes">${esc(s.team_notes)}</textarea></td>
           <td><button class="link danger" data-delete="amb_suggestions" data-id="${esc(s.id)}" title="Supprimer ce lieu">Supprimer</button></td>
-        </tr>`).join('') || '<tr><td colspan="11" class="muted">Aucun lieu proposé pour l’instant.</td></tr>';
+        </tr>`).join('') || `<tr><td colspan="11" class="muted">${done ? 'Tous les lieux sont traités.' : 'Aucun lieu proposé pour l’instant.'}</td></tr>`;
       document.querySelectorAll('[data-sfield]').forEach((el) => el.addEventListener('change', async () => {
         const { error } = await sb.from('amb_suggestions').update({ [el.dataset.sfield]: el.value || null }).eq('id', el.dataset.sugg);
         document.getElementById('error').textContent = error ? 'Modification non enregistrée.' : '';
+        const row = suggestions.find((x) => x.id === el.dataset.sugg);
+        if (!error && row) row[el.dataset.sfield] = el.value || null;
+        if (!error && el.dataset.sfield === 'follow_up') renderSuggestions();
       }));
     }
+    document.getElementById('show-done').addEventListener('change', renderContributions);
+    document.getElementById('show-done-sugg').addEventListener('change', renderSuggestions);
 
     // Suppression définitive (tests, doublons, erreurs). Réservée à l'équipe par les règles de la base.
     const DELETE_LABELS = { amb_contributions: 'ce contact', amb_suggestions: 'ce lieu' };
